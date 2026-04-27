@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "육아 AI",
+    "slug": "baby-ai-agent",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "scheme": "baby-ai",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFF5F0"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.babyai.agent"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFF5F0"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.babyai.agent"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "아이 사진을 일기에 추가하려면 사진 접근 권한이 필요합니다.",
+          "cameraPermission": "아이 사진을 찍으려면 카메라 접근 권한이 필요합니다."
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
