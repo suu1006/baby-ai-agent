@@ -327,6 +327,23 @@ function hasAnyDataKeyword(text: string): boolean {
   );
 }
 
+const WEB_SEARCH_KEYWORDS = [
+  '최신',
+  '검색',
+  '뉴스',
+  '요즘',
+  '최근 연구',
+  '논문',
+  '가이드라인',
+  '권고',
+  '질병관리청',
+  '식약처',
+];
+
+function needsWebSearch(text: string): boolean {
+  return WEB_SEARCH_KEYWORDS.some((kw) => text.includes(kw));
+}
+
 async function preloadDataContext(
   userQuery: string,
   childId: string
@@ -384,9 +401,11 @@ export async function runAgent(
     ...userMessages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
   ];
 
-  // 선제 로딩된 케이스는 tools 없이 바로 답변하므로 스트리밍 가능
-  if (options?.onToken && preloadedContext) {
-    console.log('[Agent] 스트리밍 모드 시작 (선제데이터 기반)');
+  // 도구가 필요 없는 상담은 tools 없이 바로 호출해야 React Native 화면에 토큰이 즉시 반영된다.
+  if (options?.onToken && (preloadedContext || !needsWebSearch(latestUserQuery))) {
+    console.log(
+      `[Agent] 스트리밍 모드 시작 (선제로딩: ${!!preloadedContext}, 웹검색필요: ${needsWebSearch(latestUserQuery)})`
+    );
     const streamed = await callLLMStream(messages, options.onToken);
     return streamed;
   }
@@ -415,6 +434,15 @@ export async function runAgent(
         tool_call_id: toolCall.id,
       });
     }
+
+    if (options?.onToken) {
+      messages.push({
+        role: 'user',
+        content: '수집한 정보를 바탕으로 최종 답변을 해주세요.',
+      });
+      const streamed = await callLLMStream(messages, options.onToken);
+      return streamed;
+    }
   }
 
   console.warn('[Agent] 최대 반복 횟수 초과, 마지막 답변 요청');
@@ -422,6 +450,10 @@ export async function runAgent(
     role: 'user',
     content: '지금까지 수집한 정보를 바탕으로 최종 답변을 해주세요.',
   });
+  if (options?.onToken) {
+    const streamed = await callLLMStream(messages, options.onToken);
+    return streamed;
+  }
   const finalResult = await callLLM(messages);
   if (finalResult.type === 'text') return finalResult.content;
   return '죄송합니다, 응답을 생성하는 데 문제가 발생했습니다.';

@@ -13,10 +13,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { useChildStore } from '../../store/childStore';
 import { supabase } from '../../lib/supabase';
 import { runAgent, AgentMessage } from '../../lib/agent';
-import { calculateAgeInMonths } from '../../lib/llm';
 import { Colors, Spacing, Radius, Shadows } from '../../constants/theme';
 
 type Message = {
@@ -55,14 +55,25 @@ function formatAssistantMessage(raw: string): string {
 
 export default function ChatScreen() {
   const { activeChild } = useChildStore();
+  const { question } = useLocalSearchParams<{ question?: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const lastInjectedQuestionRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (activeChild) loadChatHistory();
   }, [activeChild]);
+
+  useEffect(() => {
+    if (!question || sending) return;
+    if (lastInjectedQuestionRef.current === question) return;
+
+    lastInjectedQuestionRef.current = question;
+    setInputText(question);
+    handleSend(question);
+  }, [question, sending, activeChild]);
 
   const loadChatHistory = async () => {
     if (!activeChild) return;
@@ -142,7 +153,9 @@ export default function ChatScreen() {
         }
       );
 
-      const finalContent = formatAssistantMessage(response);
+      const finalContent =
+        formatAssistantMessage(response) ||
+        '답변을 생성하지 못했습니다. 잠시 후 다시 질문해주세요.';
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantMessageId ? { ...m, content: finalContent } : m
@@ -179,6 +192,11 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.role === 'user';
+    const isPendingAssistant = !isUser && !item.content.trim();
+    const displayContent = isPendingAssistant
+      ? '답변을 준비하고 있어요...'
+      : item.content;
+
     return (
       <View style={[styles.messagRow, isUser ? styles.userRow : styles.assistantRow]}>
         {!isUser && (
@@ -192,9 +210,24 @@ export default function ChatScreen() {
             isUser ? styles.userBubble : styles.assistantBubble,
           ]}
         >
-          <Text style={[styles.bubbleText, isUser && styles.userBubbleText]}>
-            {item.content}
-          </Text>
+          <View style={styles.messageContentRow}>
+            {isPendingAssistant && (
+              <ActivityIndicator
+                size="small"
+                color={Colors.primary}
+                style={styles.pendingIndicator}
+              />
+            )}
+            <Text
+              style={[
+                styles.bubbleText,
+                isUser && styles.userBubbleText,
+                isPendingAssistant && styles.pendingText,
+              ]}
+            >
+              {displayContent}
+            </Text>
+          </View>
           <Text style={[styles.timeText, isUser && styles.userTimeText]}>
             {new Date(item.created_at).toLocaleTimeString('ko-KR', {
               hour: '2-digit',
@@ -366,6 +399,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
     lineHeight: 22,
+  },
+  messageContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+  },
+  pendingIndicator: {
+    marginRight: Spacing.sm,
+  },
+  pendingText: {
+    color: Colors.textSecondary,
   },
   userBubbleText: {
     color: Colors.white,
