@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,17 @@ const QUICK_QUESTIONS = [
   '이유식은 언제부터 시작하나요?',
   '열이 나는데 어떻게 해야 하나요?',
   '언제쯤 걸을 수 있나요?',
+];
+
+const MIN_PENDING_STATUS_MS = 1500;
+const PENDING_STATUS_FADE_MS = 220;
+const COMPOSING_STATUS = '답변을 작성하고 있어요...';
+const COMPOSING_STATUS_INTERVAL_MS = 1800;
+const COMPOSING_STATUS_MESSAGES = [
+  '아이에게 맞는 답변으로 다듬고 있어요...',
+  '중요한 내용을 간단히 정리하고 있어요...',
+  '곧 답변을 보여드릴게요...',
+  COMPOSING_STATUS,
 ];
 
 function formatAssistantMessage(raw: string): string {
@@ -59,8 +71,21 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
+  const [assistantStatusText, setAssistantStatusText] = useState('답변을 준비하고 있어요...');
+  const statusOpacityRef = useRef(new Animated.Value(1));
   const flatListRef = useRef<FlatList>(null);
   const lastInjectedQuestionRef = useRef<string | null>(null);
+  const typewriterTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const typewriterQueueRef = useRef<string[]>([]);
+  const streamedTextRef = useRef('');
+  const typewriterResolversRef = useRef<Array<() => void>>([]);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusQueueRef = useRef<string[]>([]);
+  const lastStatusAtRef = useRef(0);
+  const currentStatusRef = useRef('답변을 준비하고 있어요...');
+  const isStatusTransitioningRef = useRef(false);
+  const composingStatusTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const composingStatusIndexRef = useRef(0);
 
   useEffect(() => {
     if (activeChild) loadChatHistory();
@@ -97,12 +122,165 @@ export default function ChatScreen() {
     return data;
   };
 
+  const stopTypewriter = () => {
+    if (typewriterTimerRef.current) {
+      clearInterval(typewriterTimerRef.current);
+      typewriterTimerRef.current = null;
+    }
+    typewriterQueueRef.current = [];
+    typewriterResolversRef.current.forEach((resolve) => resolve());
+    typewriterResolversRef.current = [];
+  };
+
+  const scheduleNextAssistantStatus = () => {
+    if (statusTimerRef.current || isStatusTransitioningRef.current) return;
+    if (statusQueueRef.current.length === 0) return;
+
+    const elapsed = Date.now() - lastStatusAtRef.current;
+    const delay = Math.max(MIN_PENDING_STATUS_MS - elapsed, 0);
+
+    statusTimerRef.current = setTimeout(() => {
+      statusTimerRef.current = null;
+      const nextStatus = statusQueueRef.current.shift();
+      if (!nextStatus) return;
+
+      isStatusTransitioningRef.current = true;
+      Animated.timing(statusOpacityRef.current, {
+        toValue: 0,
+        duration: PENDING_STATUS_FADE_MS,
+        useNativeDriver: true,
+      }).start(() => {
+        currentStatusRef.current = nextStatus;
+        setAssistantStatusText(nextStatus);
+        lastStatusAtRef.current = Date.now();
+
+        Animated.timing(statusOpacityRef.current, {
+          toValue: 1,
+          duration: PENDING_STATUS_FADE_MS,
+          useNativeDriver: true,
+        }).start(() => {
+          isStatusTransitioningRef.current = false;
+          scheduleNextAssistantStatus();
+        });
+      });
+    }, delay);
+  };
+
+  const showAssistantStatus = (status: string) => {
+    if (currentStatusRef.current === status || statusQueueRef.current.at(-1) === status) {
+      return;
+    }
+    statusQueueRef.current.push(status);
+    scheduleNextAssistantStatus();
+  };
+
+  const clearComposingStatusLoop = () => {
+    if (composingStatusTimerRef.current) {
+      clearInterval(composingStatusTimerRef.current);
+      composingStatusTimerRef.current = null;
+    }
+    composingStatusIndexRef.current = 0;
+  };
+
+  const clearPendingStatusQueue = () => {
+    if (statusTimerRef.current) {
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
+    statusQueueRef.current = [];
+    clearComposingStatusLoop();
+  };
+
+  const resetAssistantStatus = (status: string) => {
+    clearPendingStatusQueue();
+    statusOpacityRef.current.stopAnimation();
+    statusOpacityRef.current.setValue(1);
+    isStatusTransitioningRef.current = false;
+    currentStatusRef.current = status;
+    lastStatusAtRef.current = Date.now();
+    setAssistantStatusText(status);
+  };
+
+  const startComposingStatusLoop = () => {
+    if (composingStatusTimerRef.current) return;
+
+    composingStatusTimerRef.current = setInterval(() => {
+      const status = COMPOSING_STATUS_MESSAGES[composingStatusIndexRef.current];
+      composingStatusIndexRef.current =
+        (composingStatusIndexRef.current + 1) % COMPOSING_STATUS_MESSAGES.length;
+      showAssistantStatus(status);
+    }, COMPOSING_STATUS_INTERVAL_MS);
+  };
+
+  const handleAssistantStatus = (status: string) => {
+    showAssistantStatus(status);
+    if (status === COMPOSING_STATUS) {
+      startComposingStatusLoop();
+    }
+  };
+
+  useEffect(() => () => {
+    stopTypewriter();
+    clearPendingStatusQueue();
+  }, []);
+
+  const resolveTypewriterIfIdle = () => {
+    if (typewriterQueueRef.current.length > 0) return;
+
+    if (typewriterTimerRef.current) {
+      clearInterval(typewriterTimerRef.current);
+      typewriterTimerRef.current = null;
+    }
+
+    typewriterResolversRef.current.forEach((resolve) => resolve());
+    typewriterResolversRef.current = [];
+  };
+
+  const startTypewriter = (messageId: string) => {
+    if (typewriterTimerRef.current) return;
+
+    typewriterTimerRef.current = setInterval(() => {
+      const nextChar = typewriterQueueRef.current.shift();
+      if (!nextChar) {
+        resolveTypewriterIfIdle();
+        return;
+      }
+
+      streamedTextRef.current += nextChar;
+      const partial = formatAssistantMessage(streamedTextRef.current);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, content: partial } : m
+        )
+      );
+    }, 16);
+  };
+
+  const enqueueAssistantText = (messageId: string, text: string) => {
+    if (!text) return;
+    typewriterQueueRef.current.push(...Array.from(text));
+    startTypewriter(messageId);
+  };
+
+  const waitForTypewriter = () => {
+    if (typewriterQueueRef.current.length === 0 && !typewriterTimerRef.current) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      typewriterResolversRef.current.push(resolve);
+    });
+  };
+
   const handleSend = async (text?: string) => {
     const messageText = (text ?? inputText).trim();
     if (!messageText || !activeChild || sending) return;
 
     setInputText('');
     setSending(true);
+    resetAssistantStatus('질문을 살펴보고 있어요...');
+    stopTypewriter();
+    streamedTextRef.current = '';
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -131,8 +309,6 @@ export default function ChatScreen() {
         { role: 'user', content: messageText },
       ];
 
-      let streamedText = '';
-
       const response = await runAgent(
         conversationHistory,
         {
@@ -141,17 +317,15 @@ export default function ChatScreen() {
           birthdate: activeChild.birthdate,
         },
         {
+          onStatus: handleAssistantStatus,
           onToken: (token) => {
-            streamedText += token;
-            const partial = formatAssistantMessage(streamedText);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMessageId ? { ...m, content: partial } : m
-              )
-            );
+            clearPendingStatusQueue();
+            enqueueAssistantText(assistantMessageId, token);
           },
         }
       );
+
+      await waitForTypewriter();
 
       const finalContent =
         formatAssistantMessage(response) ||
@@ -194,7 +368,7 @@ export default function ChatScreen() {
     const isUser = item.role === 'user';
     const isPendingAssistant = !isUser && !item.content.trim();
     const displayContent = isPendingAssistant
-      ? '답변을 준비하고 있어요...'
+      ? assistantStatusText
       : item.content;
 
     return (
@@ -218,15 +392,16 @@ export default function ChatScreen() {
                 style={styles.pendingIndicator}
               />
             )}
-            <Text
+            <Animated.Text
               style={[
                 styles.bubbleText,
                 isUser && styles.userBubbleText,
                 isPendingAssistant && styles.pendingText,
+                isPendingAssistant && { opacity: statusOpacityRef.current },
               ]}
             >
               {displayContent}
-            </Text>
+            </Animated.Text>
           </View>
           <Text style={[styles.timeText, isUser && styles.userTimeText]}>
             {new Date(item.created_at).toLocaleTimeString('ko-KR', {

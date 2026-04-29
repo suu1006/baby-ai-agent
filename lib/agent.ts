@@ -18,6 +18,11 @@ export type AgentMessage = {
   content: string;
 };
 
+export type AgentRunOptions = {
+  onToken?: (token: string) => void;
+  onStatus?: (status: string) => void;
+};
+
 type ChildContext = {
   id: string;
   name: string;
@@ -123,44 +128,55 @@ async function executeTool(
 async function searchBabyData(
   childId: string,
   dataType: string,
-  days: number
+  days: number,
+  sinceOverride?: Date
 ): Promise<string> {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
+  const since = sinceOverride ? new Date(sinceOverride.getTime()) : new Date();
+  if (!sinceOverride) {
+    since.setDate(since.getDate() - days);
+  }
   const sinceISO = since.toISOString();
+
+  console.log(`[DB] searchBabyData: childId=${childId}, dataType=${dataType}, since=${sinceISO}`);
 
   const result: Record<string, unknown> = {};
 
   if (dataType === 'feeding' || dataType === 'all') {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('feeding_logs')
       .select('fed_at, amount_ml, type, memo')
       .eq('child_id', childId)
       .gte('fed_at', sinceISO)
       .order('fed_at', { ascending: false })
       .limit(50);
+    if (error) throw new Error(`수유 기록 조회 실패: ${error.message}`);
+    console.log(`[DB] feeding_logs 결과: ${data?.length ?? 0}건`);
     result.feeding = data ?? [];
   }
 
   if (dataType === 'sleep' || dataType === 'all') {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('sleep_logs')
       .select('started_at, ended_at, duration_minutes, memo')
       .eq('child_id', childId)
       .gte('started_at', sinceISO)
       .order('started_at', { ascending: false })
       .limit(50);
+    if (error) throw new Error(`수면 기록 조회 실패: ${error.message}`);
+    console.log(`[DB] sleep_logs 결과: ${data?.length ?? 0}건`);
     result.sleep = data ?? [];
   }
 
   if (dataType === 'diaper' || dataType === 'all') {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('diaper_logs')
       .select('changed_at, type, memo')
       .eq('child_id', childId)
       .gte('changed_at', sinceISO)
       .order('changed_at', { ascending: false })
       .limit(50);
+    if (error) throw new Error(`기저귀 기록 조회 실패: ${error.message}`);
+    console.log(`[DB] diaper_logs 결과: ${data?.length ?? 0}건, 데이터: ${JSON.stringify(data)}`);
     result.diaper = data ?? [];
   }
 
@@ -206,13 +222,31 @@ function analyzePattern(dataJson: string, analysisType: string): string {
   }
 
   if ((analysisType === 'diaper_summary' || analysisType === 'overall') && data.diaper) {
-    const diapers = data.diaper as { type?: string }[];
+    const diapers = data.diaper as { type?: string; changed_at?: string }[];
     const typeCount = diapers.reduce<Record<string, number>>((acc, d) => {
       const t = d.type ?? 'unknown';
       acc[t] = (acc[t] ?? 0) + 1;
       return acc;
     }, {});
-    summary.diaper = { totalChanges: diapers.length, typeBreakdown: typeCount };
+    const wetCount = (typeCount.wet ?? 0) + (typeCount.urine ?? 0) + (typeCount.pee ?? 0) + (typeCount['소변'] ?? 0);
+    const dirtyCount = (typeCount.dirty ?? 0) + (typeCount.stool ?? 0) + (typeCount.poop ?? 0) + (typeCount['대변'] ?? 0);
+    const bothCount = (typeCount.both ?? 0) + (typeCount.mixed ?? 0) + (typeCount['소변+대변'] ?? 0);
+    const dryCount = (typeCount.dry ?? 0) + (typeCount.change ?? 0) + (typeCount['교체'] ?? 0);
+    const urineCount = wetCount + bothCount;
+    const stoolCount = dirtyCount + bothCount;
+    summary.diaper = {
+      totalChanges: diapers.length,
+      urineCount,
+      stoolCount,
+      dryChangeCount: dryCount,
+      typeBreakdown: {
+        wet: wetCount,
+        dirty: dirtyCount,
+        both: bothCount,
+        dry: dryCount,
+      },
+      latestChangedAt: diapers[0]?.changed_at ?? null,
+    };
   }
 
   return JSON.stringify(summary);
@@ -265,21 +299,14 @@ function buildSystemPrompt(child: ChildContext): string {
 - 이름: ${child.name}
 - 나이: ${ageText}
 
-사용 가능한 도구:
-- search_baby_data: 아이의 수유/수면/기저귀 기록을 DB에서 조회
-- analyze_pattern: 조회한 데이터의 통계 패턴 분석
-- search_web: 외부 육아 정보 검색 (Tavily)
-
-판단 기준:
-1. 질문이 "우리 아이 데이터"에 관한 것이면 → search_baby_data 먼저 사용
-2. 데이터를 분석/요약해야 하면 → analyze_pattern 사용
-3. 일반 육아 지식이나 최신 정보가 필요하면 → search_web 사용
-4. 복합 질문이면 여러 도구를 순차적으로 사용
-
 응답 원칙:
 - 항상 한국어로 친근하고 따뜻하게 답변
 - ${child.name}의 나이에 맞는 발달 단계를 고려하여 조언
 - 불안해하는 부모를 안심시키되, 위험 신호는 명확히 안내
+- 대화에 아이 기록 데이터가 제공된 경우 반드시 그 숫자를 그대로 사용하여 답변
+- 소변 횟수 = wet 기록 수 + both 기록 수 (both는 소변+대변 동시 포함)
+- 대변 횟수 = dirty 기록 수 + both 기록 수
+- 기록이 0건이면 "오늘은 아직 기록이 없어요"라고 안내
 - 응답은 간결하고 실용적으로
 - 마크다운 문법(##, **, 코드블록) 없이 일반 텍스트로만 답변
 - 이모지/특수기호(❓, ✅, 🔹 등) 없이 문장과 숫자 중심으로 답변`;
@@ -327,6 +354,86 @@ function hasAnyDataKeyword(text: string): boolean {
   );
 }
 
+function getTodayStart(): Date {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function isCurrentCountQuery(userQuery: string): boolean {
+  const currentWords = ['지금', '현재', '오늘'];
+  const countWords = ['몇 번', '몇번', '몇 회', '몇회', '횟수', '몇'];
+  return (
+    currentWords.some((kw) => userQuery.includes(kw)) ||
+    countWords.some((kw) => userQuery.includes(kw))
+  );
+}
+
+function isMultiDayQuery(userQuery: string): boolean {
+  const multiDayWords = ['최근', '지난', '요즘', '이번 주', '이번주', '평균', '일주일', '7일'];
+  return multiDayWords.some((kw) => userQuery.includes(kw));
+}
+
+function getDataWindow(userQuery: string): { label: string; days: number; since?: Date } {
+  if (userQuery.includes('오늘')) {
+    return { label: '오늘', days: 1, since: getTodayStart() };
+  }
+  if (!isMultiDayQuery(userQuery) && isCurrentCountQuery(userQuery)) {
+    return { label: '오늘', days: 1, since: getTodayStart() };
+  }
+  return { label: '최근 7일', days: 7 };
+}
+
+function formatDataContext(
+  rawDataJson: string,
+  analysisJson: string,
+  label: string
+): string {
+  let analysis: {
+    diaper?: {
+      totalChanges?: number;
+      urineCount?: number;
+      stoolCount?: number;
+      dryChangeCount?: number;
+      typeBreakdown?: { wet?: number; dirty?: number; both?: number; dry?: number };
+      latestChangedAt?: string | null;
+    };
+    feeding?: unknown;
+    sleep?: unknown;
+  } = {};
+
+  try {
+    analysis = JSON.parse(analysisJson);
+  } catch {
+    return `[아이 ${label} 데이터]\n${analysisJson}\n\n[원시 데이터 요약]\n${rawDataJson.slice(0, 800)}`;
+  }
+
+  const lines = [`[아이 ${label} 데이터]`];
+
+  if (analysis.diaper) {
+    const diaper = analysis.diaper;
+    const breakdown = diaper.typeBreakdown ?? {};
+    lines.push(
+      `기저귀 요약: 총 교체 ${diaper.totalChanges ?? 0}회`,
+      `소변 횟수: ${diaper.urineCount ?? 0}회 (소변만 ${breakdown.wet ?? 0}회 + 소변+대변 ${breakdown.both ?? 0}회)`,
+      `대변 횟수: ${diaper.stoolCount ?? 0}회 (대변만 ${breakdown.dirty ?? 0}회 + 소변+대변 ${breakdown.both ?? 0}회)`,
+      `교체만: ${diaper.dryChangeCount ?? 0}회`,
+      `가장 최근 기저귀 기록: ${diaper.latestChangedAt ?? '없음'}`,
+      '소변 횟수는 wet과 both를 합산한 값이며, 질문을 받으면 이 숫자를 그대로 답변합니다.'
+    );
+  }
+
+  if (analysis.feeding) {
+    lines.push(`수유 요약 JSON: ${JSON.stringify(analysis.feeding)}`);
+  }
+
+  if (analysis.sleep) {
+    lines.push(`수면 요약 JSON: ${JSON.stringify(analysis.sleep)}`);
+  }
+
+  return `${lines.join('\n')}\n\n[분석 JSON]\n${analysisJson}\n\n[원시 데이터 요약]\n${rawDataJson.slice(0, 800)}`;
+}
+
 const WEB_SEARCH_KEYWORDS = [
   '최신',
   '검색',
@@ -344,15 +451,39 @@ function needsWebSearch(text: string): boolean {
   return WEB_SEARCH_KEYWORDS.some((kw) => text.includes(kw));
 }
 
+function hasBabySpecificKeyword(text: string): boolean {
+  return (
+    FEEDING_KEYWORDS.some((kw) => text.includes(kw)) ||
+    SLEEP_KEYWORDS.some((kw) => text.includes(kw)) ||
+    DIAPER_KEYWORDS.some((kw) => text.includes(kw))
+  );
+}
+
+async function preloadWebContext(userQuery: string): Promise<string | null> {
+  try {
+    const result = await searchWeb(userQuery);
+    if (!result || result.startsWith('Tavily API 키가')) return null;
+    return `[웹 검색 결과]\n${result}`;
+  } catch (e) {
+    console.warn('[Agent] 웹 검색 선제 로딩 실패:', e);
+    return null;
+  }
+}
+
 async function preloadDataContext(
   userQuery: string,
   childId: string
 ): Promise<string | null> {
   const intent = detectDataIntent(userQuery);
 
+  // 웹검색 전용 질문(뉴스, 최신 정보 등)이고 아기 특화 키워드가 없으면 데이터 조회 건너뜀
+  if (needsWebSearch(userQuery) && !hasBabySpecificKeyword(userQuery)) {
+    return null;
+  }
+
   // 명시적 데이터 관련 키워드가 있으면 전체 조회
   if (!intent.feeding && !intent.sleep && !intent.diaper) {
-    if (hasAnyDataKeyword(userQuery)) {
+    if (hasAnyDataKeyword(userQuery) && hasBabySpecificKeyword(userQuery)) {
       intent.feeding = true;
       intent.sleep = true;
       intent.diaper = true;
@@ -370,11 +501,29 @@ async function preloadDataContext(
       ? 'sleep'
       : 'diaper';
 
-  console.log(`[Agent] 선제 데이터 로딩: ${dataType}`);
-  const rawData = await searchBabyData(childId, dataType, 7);
-  const analysis = analyzePattern(rawData, dataType === 'all' ? 'overall' : `${dataType}_summary`);
+  const window = getDataWindow(userQuery);
 
-  return `[아이 최근 7일 데이터]\n${analysis}\n\n[원시 데이터 요약]\n${rawData.slice(0, 500)}`;
+  console.log(`[Agent] 선제 데이터 로딩: ${dataType}, 기간: ${window.label}`);
+  const rawData = await searchBabyData(childId, dataType, window.days, window.since);
+
+  // 데이터가 0건이면 null 반환 → tool calling 폴백 사용
+  let totalRecords = 0;
+  try {
+    const parsed = JSON.parse(rawData) as Record<string, unknown[]>;
+    totalRecords = Object.values(parsed).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+  } catch { /* ignore */ }
+
+  if (totalRecords === 0) {
+    console.warn(`[Agent] 선제 데이터 로딩 결과 0건 (childId=${childId}, dataType=${dataType}, since=${window.label})`);
+    const typeLabel =
+      dataType === 'feeding' ? '수유' :
+      dataType === 'sleep' ? '수면' :
+      dataType === 'diaper' ? '기저귀' : '육아';
+    return `[아이 ${window.label} 데이터]\n${typeLabel} 기록 없음 - ${window.label} 기간에 ${typeLabel} 기록이 없습니다.`;
+  }
+
+  const analysis = analyzePattern(rawData, dataType === 'all' ? 'overall' : `${dataType}_summary`);
+  return formatDataContext(rawData, analysis, window.label);
 }
 
 // ─── 에이전트 메인 루프 ───────────────────────────────────────────────────────
@@ -382,33 +531,78 @@ async function preloadDataContext(
 export async function runAgent(
   userMessages: AgentMessage[],
   child: ChildContext,
-  options?: { onToken?: (token: string) => void }
+  options?: AgentRunOptions
 ): Promise<string> {
   const latestUserQuery = userMessages.filter((m) => m.role === 'user').at(-1)?.content ?? '';
 
-  // 선제 데이터 로딩: 데이터 관련 질문이면 먼저 DB 조회 후 context 주입
-  const preloadedContext = await preloadDataContext(latestUserQuery, child.id).catch((e) => {
+  const requiresWebSearch = needsWebSearch(latestUserQuery);
+  const shouldCheckData =
+    hasBabySpecificKeyword(latestUserQuery) ||
+    hasAnyDataKeyword(latestUserQuery);
+
+  options?.onStatus?.('질문을 살펴보고 있어요...');
+
+  // 선제 데이터/웹검색은 첫 토큰 전 대기 시간을 줄이기 위해 병렬로 시작합니다.
+  const preloadedContextPromise = (async () => {
+    if (shouldCheckData) {
+      options?.onStatus?.('아이 기록을 확인하고 있어요...');
+    }
+    return preloadDataContext(latestUserQuery, child.id);
+  })().catch((e) => {
     console.warn('[Agent] 선제 데이터 로딩 실패:', e);
+    if (hasBabySpecificKeyword(latestUserQuery)) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`아이 기록을 불러오지 못했습니다. ${msg}`);
+    }
     return null;
   });
 
-  const systemPrompt = preloadedContext
-    ? `${buildSystemPrompt(child)}\n\n${preloadedContext}`
-    : buildSystemPrompt(child);
+  const webContextPromise = requiresWebSearch
+    ? (async () => {
+        options?.onStatus?.('최신 정보를 검색하고 있어요...');
+        return preloadWebContext(latestUserQuery);
+      })()
+    : Promise.resolve(null);
+
+  const [preloadedContext, webContext] = await Promise.all([
+    preloadedContextPromise,
+    webContextPromise,
+  ]);
+
+  console.log(`[Agent] 선제로딩 완료 - 아기데이터: ${!!preloadedContext}, 웹검색: ${!!webContext}`);
+
+  const systemPrompt = buildSystemPrompt(child);
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
     ...userMessages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
   ];
 
-  // 도구가 필요 없는 상담은 tools 없이 바로 호출해야 React Native 화면에 토큰이 즉시 반영된다.
-  if (options?.onToken && (preloadedContext || !needsWebSearch(latestUserQuery))) {
-    console.log(
-      `[Agent] 스트리밍 모드 시작 (선제로딩: ${!!preloadedContext}, 웹검색필요: ${needsWebSearch(latestUserQuery)})`
-    );
+  // 선제 로딩된 컨텍스트를 assistant 메시지로 마지막 질문 직전에 주입
+  const contextsToInject: string[] = [];
+  if (preloadedContext) contextsToInject.push(`데이터베이스에서 아이 기록을 조회했습니다:\n\n${preloadedContext}`);
+  if (webContext) contextsToInject.push(`웹에서 최신 정보를 검색했습니다:\n\n${webContext}`);
+
+  if (contextsToInject.length > 0) {
+    const lastUserIdx = messages.map((m) => m.role).lastIndexOf('user');
+    if (lastUserIdx !== -1) {
+      messages.splice(lastUserIdx, 0, {
+        role: 'assistant',
+        content: contextsToInject.join('\n\n---\n\n'),
+      });
+    }
+  }
+
+  // 소형 모델은 tool calling이 불안정하므로 항상 선제 로딩 후 스트리밍
+  if (options?.onToken) {
+    console.log(`[Agent] 스트리밍 모드`);
+    options.onStatus?.('답변을 작성하고 있어요...');
     const streamed = await callLLMStream(messages, options.onToken);
     return streamed;
   }
+
+  // onToken 없는 경우 → tool calling 루프 (비스트리밍)
+  console.log(`[Agent] tool calling 모드 (비스트리밍)`);
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     // 선제 로딩이 됐으면 tools 없이 호출 (메모리/안정성 향상)

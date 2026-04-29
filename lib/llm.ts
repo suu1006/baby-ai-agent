@@ -36,18 +36,118 @@ export type LLMResponse =
   | { type: 'text'; content: string }
   | { type: 'tool_calls'; toolCalls: ToolCall[] };
 
+function parseOllamaStreamLine(
+  line: string,
+  onToken: (token: string) => void
+): string {
+  const trimmed = line.trim();
+  if (!trimmed) return '';
+
+  try {
+    const chunk = JSON.parse(trimmed) as {
+      message?: { content?: string };
+    };
+    const token = chunk.message?.content ?? '';
+    if (token) onToken(token);
+    return token;
+  } catch {
+    // 아직 완성되지 않았거나 비 JSON인 라인은 다음 chunk에서 다시 처리합니다.
+    return '';
+  }
+}
+
+function shouldUseXHRStreaming() {
+  return (
+    typeof XMLHttpRequest !== 'undefined' &&
+    typeof navigator !== 'undefined' &&
+    navigator.product === 'ReactNative'
+  );
+}
+
+function callLLMStreamWithXHR(
+  requestBody: string,
+  onToken: (token: string) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let seenLength = 0;
+    let buffer = '';
+    let fullText = '';
+    let settled = false;
+
+    const consumeText = (text: string) => {
+      buffer += text;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        fullText += parseOllamaStreamLine(line, onToken);
+      }
+    };
+
+    xhr.open('POST', OLLAMA_API_URL, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED && xhr.status >= 400 && !settled) {
+        settled = true;
+        reject(new Error(`Ollama 서버 오류 (${xhr.status}): ${xhr.responseText}`));
+      }
+    };
+    xhr.onprogress = () => {
+      const nextText = xhr.responseText.slice(seenLength);
+      seenLength = xhr.responseText.length;
+      consumeText(nextText);
+    };
+    xhr.onload = () => {
+      if (settled) return;
+      settled = true;
+
+      const nextText = xhr.responseText.slice(seenLength);
+      if (nextText) consumeText(nextText);
+
+      if (buffer.trim()) {
+        fullText += parseOllamaStreamLine(buffer, onToken);
+      }
+
+      if (xhr.status >= 400) {
+        reject(new Error(`Ollama 서버 오류 (${xhr.status}): ${xhr.responseText}`));
+        return;
+      }
+
+      resolve(fullText);
+    };
+    xhr.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('Ollama 스트리밍 연결에 실패했습니다.'));
+    };
+    xhr.ontimeout = () => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('Ollama 스트리밍 요청 시간이 초과되었습니다.'));
+    };
+    xhr.send(requestBody);
+  });
+}
+
 export async function callLLMStream(
   messages: LLMMessage[],
   onToken: (token: string) => void
 ): Promise<string> {
+  const requestBody = JSON.stringify({
+    model: MODEL,
+    stream: true,
+    messages,
+  });
+
+  if (shouldUseXHRStreaming()) {
+    return callLLMStreamWithXHR(requestBody, onToken);
+  }
+
   const response = await fetch(OLLAMA_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      stream: true,
-      messages,
-    }),
+    body: requestBody,
   });
 
   if (!response.ok) {
@@ -57,13 +157,7 @@ export async function callLLMStream(
   }
 
   if (!response.body) {
-    // 스트림이 없는 런타임 fallback
-    const fallback = await callLLM(messages);
-    if (fallback.type !== 'text') {
-      throw new Error('스트리밍 fallback에서 예상치 못한 tool_calls 응답이 왔습니다.');
-    }
-    onToken(fallback.content);
-    return fallback.content;
+    return callLLMStreamWithXHR(requestBody, onToken);
   }
 
   const reader = response.body.getReader();
@@ -80,38 +174,14 @@ export async function callLLMStream(
     buffer = lines.pop() ?? '';
 
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      try {
-        const chunk = JSON.parse(trimmed) as {
-          done?: boolean;
-          message?: { content?: string };
-        };
-        const token = chunk.message?.content ?? '';
-        if (token) {
-          fullText += token;
-          onToken(token);
-        }
-      } catch {
-        // 파싱 실패 라인은 무시하고 다음 라인 처리
-      }
+      fullText += parseOllamaStreamLine(line, onToken);
     }
   }
 
   // 마지막 버퍼 처리
   const rest = buffer.trim();
   if (rest) {
-    try {
-      const chunk = JSON.parse(rest) as { message?: { content?: string } };
-      const token = chunk.message?.content ?? '';
-      if (token) {
-        fullText += token;
-        onToken(token);
-      }
-    } catch {
-      // ignore
-    }
+    fullText += parseOllamaStreamLine(rest, onToken);
   }
 
   return fullText;

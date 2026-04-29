@@ -241,11 +241,11 @@ export default function HomeScreen() {
   const insight =
     sleepDeltaMinutes > 40
       ? `오늘 수면이 평균보다 ${Math.round(
-          sleepDeltaMinutes
-        )}분 부족해요. 다음 낮잠 전에는 조용한 환경으로 미리 전환해보세요.`
+        sleepDeltaMinutes
+      )}분 부족해요. 다음 낮잠 전에는 조용한 환경으로 미리 전환해보세요.`
       : sleepDeltaMinutes < -40
-      ? '오늘 수면량이 충분해서 컨디션이 안정적일 가능성이 높아요.'
-      : '오늘 수면 패턴이 평균 범위에 가까워요. 현재 루틴을 유지해보세요.';
+        ? '오늘 수면량이 충분해서 컨디션이 안정적일 가능성이 높아요.'
+        : '오늘 수면 패턴이 평균 범위에 가까워요. 현재 루틴을 유지해보세요.';
 
   if (!activeChild) {
     return (
@@ -354,7 +354,7 @@ export default function HomeScreen() {
 
         <View style={styles.aiCard}>
           <View style={styles.aiCardHeader}>
-            <Text style={styles.aiCardTitle}>맘마 AI</Text>
+            <Text style={styles.aiCardTitle}>육아코치 AI</Text>
             <Ionicons name="sparkles" size={14} color={Colors.success} />
           </View>
           <Text style={styles.aiInsight}>{insight}</Text>
