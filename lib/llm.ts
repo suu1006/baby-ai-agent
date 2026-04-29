@@ -1,6 +1,22 @@
 const OLLAMA_BASE_URL = process.env.EXPO_PUBLIC_OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_API_URL = `${OLLAMA_BASE_URL}/api/chat`;
 const MODEL = process.env.EXPO_PUBLIC_OLLAMA_MODEL || 'llama3.1';
+const DEFAULT_NUM_PREDICT = 700;
+const DEFAULT_TEMPERATURE = 0.4;
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const OLLAMA_OPTIONS = {
+  num_predict: parsePositiveInt(
+    process.env.EXPO_PUBLIC_OLLAMA_NUM_PREDICT,
+    DEFAULT_NUM_PREDICT
+  ),
+  temperature: DEFAULT_TEMPERATURE,
+};
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -138,6 +154,7 @@ export async function callLLMStream(
     model: MODEL,
     stream: true,
     messages,
+    options: OLLAMA_OPTIONS,
   });
 
   if (shouldUseXHRStreaming()) {
@@ -195,6 +212,7 @@ export async function callLLM(
     model: MODEL,
     stream: false,
     messages,
+    options: OLLAMA_OPTIONS,
   };
 
   if (tools && tools.length > 0) {
