@@ -79,6 +79,20 @@ export type Database = {
         Insert: Omit<Database['public']['Tables']['diaper_logs']['Row'], 'id' | 'created_at'>;
         Update: Partial<Database['public']['Tables']['diaper_logs']['Insert']>;
       };
+      health_logs: {
+        Row: {
+          id: string;
+          child_id: string;
+          recorded_at: string;
+          type: 'medication' | 'temperature' | 'hospital' | 'symptom';
+          title: string;
+          value: string | null;
+          memo: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['health_logs']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['health_logs']['Insert']>;
+      };
     };
   };
 };

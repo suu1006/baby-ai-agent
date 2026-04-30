@@ -18,11 +18,82 @@ import { Colors, Spacing, Radius, Shadows } from '../../constants/theme';
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 
-type LogTab = 'feeding' | 'sleep' | 'diaper';
+type PrimaryLogTab = 'feeding' | 'sleep' | 'diaper';
+type HealthLogType = 'medication' | 'temperature' | 'hospital' | 'symptom';
+type LogTab = PrimaryLogTab | HealthLogType;
 
 type FeedingLog = { id: string; fed_at: string; amount_ml: number | null; type: string };
 type SleepLog = { id: string; started_at: string; ended_at: string | null; duration_minutes: number | null };
 type DiaperLog = { id: string; changed_at: string; type: string };
+type HealthLog = {
+  id: string;
+  recorded_at: string;
+  type: HealthLogType;
+  title: string;
+  value: string | null;
+  memo: string | null;
+};
+
+const PRIMARY_TABS = [
+  { key: 'feeding', label: '수유', icon: 'water' },
+  { key: 'sleep', label: '수면', icon: 'moon' },
+  { key: 'diaper', label: '기저귀', icon: 'refresh-circle' },
+] as const;
+
+const HEALTH_TABS = [
+  {
+    key: 'medication',
+    label: '투약',
+    icon: 'medkit',
+    color: Colors.error,
+    backgroundColor: '#FDEEEB',
+    titleLabel: '약 이름',
+    titlePlaceholder: '예: 해열제',
+    valueLabel: '용량/횟수',
+    valuePlaceholder: '예: 3ml, 하루 2회',
+  },
+  {
+    key: 'temperature',
+    label: '체온',
+    icon: 'thermometer',
+    color: Colors.warning,
+    backgroundColor: '#FFF8E1',
+    titleLabel: '측정 위치/상태',
+    titlePlaceholder: '예: 귀 체온, 겨드랑이 체온',
+    valueLabel: '체온',
+    valuePlaceholder: '예: 38.2',
+  },
+  {
+    key: 'hospital',
+    label: '병원',
+    icon: 'business',
+    color: Colors.secondary,
+    backgroundColor: Colors.secondaryLight,
+    titleLabel: '방문 내용',
+    titlePlaceholder: '예: 소아과 진료',
+    valueLabel: '병원명/진단',
+    valuePlaceholder: '예: 동네 소아과, 감기',
+  },
+  {
+    key: 'symptom',
+    label: '증상',
+    icon: 'pulse',
+    color: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+    titleLabel: '증상',
+    titlePlaceholder: '예: 열, 기침, 콧물',
+    valueLabel: '정도/횟수',
+    valuePlaceholder: '예: 38도 이상, 밤에 심함',
+  },
+] as const;
+
+function isHealthTab(tab: LogTab | null): tab is HealthLogType {
+  return HEALTH_TABS.some((item) => item.key === tab);
+}
+
+function getHealthConfig(type: HealthLogType) {
+  return HEALTH_TABS.find((item) => item.key === type) ?? HEALTH_TABS[0];
+}
 
 // ─── 도우미 ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +141,7 @@ export default function LogsScreen() {
   const [feedingLogs, setFeedingLogs] = useState<FeedingLog[]>([]);
   const [sleepLogs, setSleepLogs] = useState<SleepLog[]>([]);
   const [diaperLogs, setDiaperLogs] = useState<DiaperLog[]>([]);
+  const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [modalType, setModalType] = useState<LogTab | null>(null);
 
@@ -81,6 +153,10 @@ export default function LogsScreen() {
   const [sleepEnd, setSleepEnd] = useState('');
   // 기저귀 폼
   const [diaperType, setDiaperType] = useState<'wet' | 'dirty' | 'both' | 'dry'>('wet');
+  // 건강 폼
+  const [healthTitle, setHealthTitle] = useState('');
+  const [healthValue, setHealthValue] = useState('');
+  const [healthMemo, setHealthMemo] = useState('');
 
   const loadLogs = useCallback(async () => {
     if (!activeChild) return;
@@ -88,7 +164,7 @@ export default function LogsScreen() {
     since.setDate(since.getDate() - 7);
     const sinceISO = since.toISOString();
 
-    const [feeding, sleep, diaper] = await Promise.all([
+    const [feeding, sleep, diaper, health] = await Promise.all([
       supabase
         .from('feeding_logs')
         .select('id, fed_at, amount_ml, type')
@@ -110,11 +186,19 @@ export default function LogsScreen() {
         .gte('changed_at', sinceISO)
         .order('changed_at', { ascending: false })
         .limit(30),
+      supabase
+        .from('health_logs')
+        .select('id, recorded_at, type, title, value, memo')
+        .eq('child_id', activeChild.id)
+        .gte('recorded_at', sinceISO)
+        .order('recorded_at', { ascending: false })
+        .limit(60),
     ]);
 
     if (feeding.data) setFeedingLogs(feeding.data);
     if (sleep.data) setSleepLogs(sleep.data);
     if (diaper.data) setDiaperLogs(diaper.data);
+    if (health.data) setHealthLogs(health.data as HealthLog[]);
   }, [activeChild]);
 
   useEffect(() => { loadLogs(); }, [loadLogs]);
@@ -189,6 +273,40 @@ export default function LogsScreen() {
     loadLogs();
   };
 
+  const resetHealthForm = () => {
+    setHealthTitle('');
+    setHealthValue('');
+    setHealthMemo('');
+  };
+
+  const handleSaveHealth = async () => {
+    if (!activeChild || !isHealthTab(modalType)) return;
+
+    const config = getHealthConfig(modalType);
+    const title = healthTitle.trim() || config.label;
+    const value = healthValue.trim() || null;
+    const memo = healthMemo.trim() || null;
+
+    const { error } = await supabase.from('health_logs').insert({
+      child_id: activeChild.id,
+      recorded_at: new Date().toISOString(),
+      type: modalType,
+      title,
+      value,
+      memo,
+    });
+
+    if (error) {
+      console.error('[HealthLog] 저장 실패:', error.code, error.message, error.details);
+      Alert.alert('저장 실패', `${error.message}\n\n코드: ${error.code}`);
+      return;
+    }
+
+    resetHealthForm();
+    setModalType(null);
+    loadLogs();
+  };
+
   if (!activeChild) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -199,6 +317,13 @@ export default function LogsScreen() {
       </SafeAreaView>
     );
   }
+
+  const activeHealthLogs = isHealthTab(activeTab)
+    ? healthLogs.filter((log) => log.type === activeTab)
+    : [];
+  const modalHealthConfig = isHealthTab(modalType)
+    ? getHealthConfig(modalType)
+    : null;
 
   // ─── 렌더링 ───────────────────────────────────────────────────────────────
 
@@ -211,17 +336,25 @@ export default function LogsScreen() {
 
       {/* 탭 */}
       <View style={styles.tabRow}>
-        {([
-          { key: 'feeding', label: '수유', icon: 'water' },
-          { key: 'sleep', label: '수면', icon: 'moon' },
-          { key: 'diaper', label: '기저귀', icon: 'refresh-circle' },
-        ] as const).map(({ key, label, icon }) => (
+        {PRIMARY_TABS.map(({ key, label, icon }) => (
           <TouchableOpacity
             key={key}
             style={[styles.tab, activeTab === key && styles.tabActive]}
             onPress={() => setActiveTab(key)}
           >
             <Ionicons name={icon} size={16} color={activeTab === key ? Colors.primary : Colors.textSecondary} />
+            <Text style={[styles.tabText, activeTab === key && styles.tabTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={[styles.tabRow, styles.healthTabRow]}>
+        {HEALTH_TABS.map(({ key, label, icon, color }) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.tab, styles.healthTab, activeTab === key && styles.tabActive]}
+            onPress={() => setActiveTab(key)}
+          >
+            <Ionicons name={icon} size={15} color={activeTab === key ? color : Colors.textSecondary} />
             <Text style={[styles.tabText, activeTab === key && styles.tabTextActive]}>{label}</Text>
           </TouchableOpacity>
         ))}
@@ -278,9 +411,31 @@ export default function LogsScreen() {
           </View>
         ))}
 
+        {isHealthTab(activeTab) && activeHealthLogs.map((log) => {
+          const config = getHealthConfig(log.type);
+
+          return (
+            <View key={log.id} style={styles.logCard}>
+              <View style={[styles.logIconBox, { backgroundColor: config.backgroundColor }]}>
+                <Ionicons name={config.icon} size={20} color={config.color} />
+              </View>
+              <View style={styles.logInfo}>
+                <Text style={styles.logTitle}>
+                  {log.title}{log.value ? ` · ${log.value}` : ''}
+                </Text>
+                {log.memo ? (
+                  <Text style={styles.logMemo}>{log.memo}</Text>
+                ) : null}
+                <Text style={styles.logTime}>{formatTime(log.recorded_at)}</Text>
+              </View>
+            </View>
+          );
+        })}
+
         {((activeTab === 'feeding' && feedingLogs.length === 0) ||
           (activeTab === 'sleep' && sleepLogs.length === 0) ||
-          (activeTab === 'diaper' && diaperLogs.length === 0)) && (
+          (activeTab === 'diaper' && diaperLogs.length === 0) ||
+          (isHealthTab(activeTab) && activeHealthLogs.length === 0)) && (
           <View style={styles.emptyList}>
             <Text style={styles.emptyListText}>최근 7일간 기록이 없습니다</Text>
           </View>
@@ -401,6 +556,57 @@ export default function LogsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ─── 건강 모달 ─── */}
+      <Modal visible={modalHealthConfig !== null} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>
+              {modalHealthConfig?.label ?? '건강'} 기록
+            </Text>
+            <Text style={styles.modalLabel}>{modalHealthConfig?.titleLabel}</Text>
+            <TextInput
+              style={styles.input}
+              value={healthTitle}
+              onChangeText={setHealthTitle}
+              placeholder={modalHealthConfig?.titlePlaceholder}
+              placeholderTextColor={Colors.textLight}
+            />
+            <Text style={styles.modalLabel}>{modalHealthConfig?.valueLabel}</Text>
+            <TextInput
+              style={styles.input}
+              value={healthValue}
+              onChangeText={setHealthValue}
+              keyboardType={modalType === 'temperature' ? 'decimal-pad' : 'default'}
+              placeholder={modalHealthConfig?.valuePlaceholder}
+              placeholderTextColor={Colors.textLight}
+            />
+            <Text style={styles.modalLabel}>메모 (선택)</Text>
+            <TextInput
+              style={[styles.input, styles.memoInput]}
+              value={healthMemo}
+              onChangeText={setHealthMemo}
+              multiline
+              placeholder="상세 증상, 복용 후 반응, 진료 메모 등을 적어주세요"
+              placeholderTextColor={Colors.textLight}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => {
+                  resetHealthForm();
+                  setModalType(null);
+                }}
+              >
+                <Text style={styles.cancelBtnText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveHealth}>
+                <Text style={styles.saveBtnText}>저장</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -419,11 +625,14 @@ const styles = StyleSheet.create({
   tabRow: {
     flexDirection: 'row',
     marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     padding: 4,
     ...Shadows.sm,
+  },
+  healthTabRow: {
+    marginBottom: Spacing.md,
   },
   tab: {
     flex: 1,
@@ -433,6 +642,10 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 8,
     borderRadius: Radius.md,
+  },
+  healthTab: {
+    gap: 3,
+    paddingHorizontal: 2,
   },
   tabActive: { backgroundColor: Colors.background },
   tabText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
@@ -457,6 +670,7 @@ const styles = StyleSheet.create({
   },
   logInfo: { flex: 1 },
   logTitle: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  logMemo: { fontSize: 13, color: Colors.textSecondary, marginTop: 2, lineHeight: 18 },
   logTime: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   emptyList: { alignItems: 'center', paddingTop: 60 },
   emptyListText: { color: Colors.textLight, fontSize: 14 },
@@ -521,6 +735,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
     marginBottom: Spacing.sm,
+  },
+  memoInput: {
+    height: 92,
+    paddingTop: Spacing.sm,
+    textAlignVertical: 'top',
   },
   modalActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
   cancelBtn: {

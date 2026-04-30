@@ -38,9 +38,20 @@ type DiaperLog = {
   type: 'wet' | 'dirty' | 'both' | 'dry';
 };
 
+type HealthLogType = 'medication' | 'temperature' | 'hospital' | 'symptom';
+
+type HealthLog = {
+  id: string;
+  recorded_at: string;
+  type: HealthLogType;
+  title: string;
+  value: string | null;
+  memo: string | null;
+};
+
 type TimelineItem = {
   id: string;
-  type: 'feeding' | 'sleep' | 'diaper';
+  type: 'feeding' | 'sleep' | 'diaper' | 'health';
   title: string;
   subtitle: string;
   timestamp: number;
@@ -76,12 +87,27 @@ function feedingLabel(type: FeedingLog['type']) {
   return '이유식';
 }
 
+function healthLabel(type: HealthLogType) {
+  if (type === 'medication') return '투약';
+  if (type === 'temperature') return '체온';
+  if (type === 'hospital') return '병원 방문';
+  return '증상';
+}
+
+function healthColor(type: HealthLogType) {
+  if (type === 'medication') return Colors.error;
+  if (type === 'temperature') return Colors.warning;
+  if (type === 'hospital') return Colors.secondary;
+  return Colors.primary;
+}
+
 export default function HomeScreen() {
   const { user } = useAuthStore();
   const { activeChild, children, fetchChildren, setActiveChild } = useChildStore();
   const [feedingLogs, setFeedingLogs] = useState<FeedingLog[]>([]);
   const [sleepLogs, setSleepLogs] = useState<SleepLog[]>([]);
   const [diaperLogs, setDiaperLogs] = useState<DiaperLog[]>([]);
+  const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -95,7 +121,7 @@ export default function HomeScreen() {
     since.setDate(since.getDate() - 7);
     const sinceISO = since.toISOString();
 
-    const [feeding, sleep, diaper] = await Promise.all([
+    const [feeding, sleep, diaper, health] = await Promise.all([
       supabase
         .from('feeding_logs')
         .select('id, fed_at, amount_ml, type')
@@ -117,11 +143,19 @@ export default function HomeScreen() {
         .gte('changed_at', sinceISO)
         .order('changed_at', { ascending: false })
         .limit(80),
+      supabase
+        .from('health_logs')
+        .select('id, recorded_at, type, title, value, memo')
+        .eq('child_id', activeChild.id)
+        .gte('recorded_at', sinceISO)
+        .order('recorded_at', { ascending: false })
+        .limit(80),
     ]);
 
     if (feeding.data) setFeedingLogs(feeding.data as FeedingLog[]);
     if (sleep.data) setSleepLogs(sleep.data as SleepLog[]);
     if (diaper.data) setDiaperLogs(diaper.data as DiaperLog[]);
+    if (health.data) setHealthLogs(health.data as HealthLog[]);
     setLoading(false);
   }, [activeChild]);
 
@@ -158,6 +192,9 @@ export default function HomeScreen() {
   );
   const todayDiapers = diaperLogs.filter(
     (log) => new Date(log.changed_at).getTime() >= todayStart
+  );
+  const todayHealthLogs = healthLogs.filter(
+    (log) => new Date(log.recorded_at).getTime() >= todayStart
   );
   const todaySleepMinutes = todaySleeps.reduce(
     (sum, log) => sum + (log.duration_minutes ?? 0),
@@ -231,10 +268,19 @@ export default function HomeScreen() {
       color: Colors.warning,
     }));
 
-    return [...feedingItems, ...sleepItems, ...diaperItems]
+    const healthItems: TimelineItem[] = todayHealthLogs.map((log) => ({
+      id: `h-${log.id}`,
+      type: 'health',
+      title: `${healthLabel(log.type)} ${log.value ? `${log.title} · ${log.value}` : log.title}`,
+      subtitle: log.memo || '건강 기록',
+      timestamp: new Date(log.recorded_at).getTime(),
+      color: healthColor(log.type),
+    }));
+
+    return [...feedingItems, ...sleepItems, ...diaperItems, ...healthItems]
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 6);
-  }, [todayFeedings, todaySleeps, todayDiapers]);
+  }, [todayFeedings, todaySleeps, todayDiapers, todayHealthLogs]);
 
   const expectedSleepByAge = ageInMonths < 6 ? 14 : ageInMonths < 12 ? 13 : 12;
   const sleepDeltaMinutes = expectedSleepByAge * 60 - todaySleepMinutes;

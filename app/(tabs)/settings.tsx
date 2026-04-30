@@ -62,9 +62,11 @@ export default function SettingsScreen() {
                 />
               ) : (
                 <View style={styles.profilePhotoPlaceholder}>
-                  <Text style={styles.profileEmoji}>
-                    {activeChild.gender === 'male' ? '👦' : '👧'}
-                  </Text>
+                  <Ionicons
+                    name={activeChild.gender === 'male' ? 'man' : 'woman'}
+                    size={34}
+                    color={Colors.primary}
+                  />
                 </View>
               )}
               <View style={styles.profileInfo}>
@@ -91,9 +93,13 @@ export default function SettingsScreen() {
                 ]}
                 onPress={() => setActiveChild(child)}
               >
-                <Text style={styles.childItemEmoji}>
-                  {child.gender === 'male' ? '👦' : '👧'}
-                </Text>
+                <View style={styles.childItemIcon}>
+                  <Ionicons
+                    name={child.gender === 'male' ? 'man' : 'woman'}
+                    size={18}
+                    color={Colors.primary}
+                  />
+                </View>
                 <Text style={styles.childItemName}>{child.name}</Text>
                 {activeChild?.id === child.id && (
                   <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />
@@ -164,7 +170,7 @@ export default function SettingsScreen() {
           <Text style={styles.signOutText}>로그아웃</Text>
         </TouchableOpacity>
 
-        <Text style={styles.footer}>육아 AI - 우리 아이의 성장을 함께해요 👶</Text>
+        <Text style={styles.footer}>육아 AI - 우리 아이의 성장을 함께해요</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -203,9 +209,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  profileEmoji: {
-    fontSize: 36,
   },
   profileInfo: {
     gap: 2,
@@ -251,8 +254,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     backgroundColor: Colors.primaryLight,
   },
-  childItemEmoji: {
-    fontSize: 22,
+  childItemIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   childItemName: {
     flex: 1,
