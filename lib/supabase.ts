@@ -4,15 +4,29 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const missingSupabaseConfig =
+  !supabaseUrl || !supabaseAnonKey || supabaseUrl === 'your_supabase_project_url' || supabaseAnonKey === 'your_supabase_anon_key';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabaseConfigError = missingSupabaseConfig
+  ? 'Supabase 환경변수 EXPO_PUBLIC_SUPABASE_URL 또는 EXPO_PUBLIC_SUPABASE_ANON_KEY가 설정되지 않았습니다.'
+  : null;
+
+if (supabaseConfigError) {
+  console.error(`[Supabase] ${supabaseConfigError}`);
+}
+
+export const supabase = createClient(
+  missingSupabaseConfig ? 'https://placeholder.supabase.co' : supabaseUrl,
+  missingSupabaseConfig ? 'placeholder-anon-key' : supabaseAnonKey,
+  {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
   },
-});
+  }
+);
 
 export type Database = {
   public: {

@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { Stack, router, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from '../store/authStore';
 import { useChildStore } from '../store/childStore';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigError } from '../lib/supabase';
+import { Colors, Spacing } from '../constants/theme';
 
 function useProtectedRoute() {
   const { session, loading, setSession } = useAuthStore();
@@ -11,6 +13,11 @@ function useProtectedRoute() {
   const segments = useSegments();
 
   useEffect(() => {
+    if (supabaseConfigError) {
+      setSession(null);
+      return;
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
@@ -25,6 +32,7 @@ function useProtectedRoute() {
   }, []);
 
   useEffect(() => {
+    if (supabaseConfigError) return;
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
@@ -59,6 +67,19 @@ function useProtectedRoute() {
 export default function RootLayout() {
   useProtectedRoute();
 
+  if (supabaseConfigError) {
+    return (
+      <View style={styles.configErrorContainer}>
+        <StatusBar style="dark" />
+        <Text style={styles.configErrorTitle}>앱 설정이 누락되었습니다</Text>
+        <Text style={styles.configErrorText}>{supabaseConfigError}</Text>
+        <Text style={styles.configErrorText}>
+          EAS production 환경에 Supabase URL과 anon key를 설정한 뒤 다시 빌드해주세요.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <>
       <StatusBar style="dark" />
@@ -70,3 +91,24 @@ export default function RootLayout() {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  configErrorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: Spacing.xl,
+    backgroundColor: Colors.background,
+  },
+  configErrorTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: Colors.text,
+    marginBottom: Spacing.md,
+  },
+  configErrorText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
+  },
+});
