@@ -10,6 +10,10 @@ import {
   TextInput,
   RefreshControl,
   Pressable,
+  Platform,
+  Keyboard,
+  InputAccessoryView,
+  type KeyboardEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,17 +27,9 @@ import { Colors, Spacing, Radius, Shadows } from '../../constants/theme';
 type PrimaryLogTab = 'feeding' | 'sleep' | 'diaper';
 type HealthLogType = 'medication' | 'temperature' | 'hospital' | 'symptom';
 type LogTab = PrimaryLogTab | HealthLogType;
-type DateTimeTarget = 'feed' | 'sleepStart' | 'sleepEnd' | 'diaper' | 'health' | 'edit';
+type DateTimeTarget = 'feed' | 'sleepStart' | 'sleepEnd' | 'diaper' | 'health';
 type DateTimePickerMode = 'date' | 'time';
 type FeedingType = 'breast' | 'formula' | 'mixed' | 'solid';
-type EditableDateTimeTable = 'feeding_logs' | 'sleep_logs' | 'diaper_logs' | 'health_logs';
-type EditDateTime = {
-  title: string;
-  table: EditableDateTimeTable;
-  column: string;
-  id: string;
-  value: Date;
-};
 
 type FeedingLog = { id: string; fed_at: string; amount_ml: number | null; type: string };
 type SleepLog = { id: string; started_at: string; ended_at: string | null; duration_minutes: number | null };
@@ -174,6 +170,101 @@ function formatDuration(minutes: number | null) {
   return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
 }
 
+const IOS_NUMERIC_INPUT_ACCESSORY_ID = 'logsNumericInputAccessory';
+
+/** + 버튼과 바텀 탭 사이 / 리스트가 FAB에 가리지 않도록 */
+const FAB_SIZE = 56;
+const FAB_GAP_ABOVE_TAB = 12;
+const LIST_PADDING_BOTTOM = FAB_GAP_ABOVE_TAB + FAB_SIZE + Spacing.sm;
+
+/** 전체 딤·시트 뒤 배경 (키보드 피하며 시트만 올릴 때 틈으로 목록이 비치지 않게) */
+const MODAL_DIM = 'rgba(0,0,0,0.4)';
+
+function LogSheetModal({
+  visible,
+  onClose,
+  children,
+  /** iOS 숫자·소수 키보드용 상단 「완료」 바 */
+  numericAccessory,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  numericAccessory?: boolean;
+}) {
+  const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardBottomInset(0);
+      return;
+    }
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = (e: KeyboardEvent) => {
+      setKeyboardBottomInset(e.endCoordinates.height);
+    };
+    const onHide = () => setKeyboardBottomInset(0);
+    const subShow = Keyboard.addListener(showEvt, onShow);
+    const subHide = Keyboard.addListener(hideEvt, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [visible]);
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={() => {
+        Keyboard.dismiss();
+        onClose();
+      }}
+    >
+      <View style={styles.modalKeyboardRoot}>
+        {Platform.OS === 'ios' && numericAccessory ? (
+          <InputAccessoryView nativeID={IOS_NUMERIC_INPUT_ACCESSORY_ID}>
+            <View style={styles.inputAccessoryBar}>
+              <TouchableOpacity
+                onPress={() => Keyboard.dismiss()}
+                hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
+              >
+                <Text style={styles.inputAccessoryDone}>완료</Text>
+              </TouchableOpacity>
+            </View>
+          </InputAccessoryView>
+        ) : null}
+        <Pressable
+          style={styles.modalDimBackdrop}
+          onPress={() => {
+            Keyboard.dismiss();
+            onClose();
+          }}
+        />
+        <View
+          style={[
+            styles.modalSheetWrap,
+            { bottom: keyboardBottomInset },
+          ]}
+        >
+          <View style={styles.modalBox}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {children}
+            </ScrollView>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── 메인 컴포넌트 ────────────────────────────────────────────────────────────
 
 export default function LogsScreen() {
@@ -189,8 +280,6 @@ export default function LogsScreen() {
     target: DateTimeTarget;
     mode: DateTimePickerMode;
   } | null>(null);
-  const [editDateTime, setEditDateTime] = useState<EditDateTime | null>(null);
-
   // 수유 폼
   const [feedAmount, setFeedAmount] = useState('');
   const [feedType, setFeedType] = useState<FeedingType>('breast');
@@ -199,14 +288,17 @@ export default function LogsScreen() {
   // 수면 폼
   const [sleepStart, setSleepStart] = useState<Date | null>(null);
   const [sleepEnd, setSleepEnd] = useState<Date | null>(null);
+  const [editingSleepLog, setEditingSleepLog] = useState<SleepLog | null>(null);
   // 기저귀 폼
   const [diaperType, setDiaperType] = useState<'wet' | 'dirty' | 'both' | 'dry'>('wet');
   const [diaperDateTime, setDiaperDateTime] = useState<Date | null>(null);
+  const [editingDiaperLog, setEditingDiaperLog] = useState<DiaperLog | null>(null);
   // 건강 폼
   const [healthTitle, setHealthTitle] = useState('');
   const [healthValue, setHealthValue] = useState('');
   const [healthMemo, setHealthMemo] = useState('');
   const [healthDateTime, setHealthDateTime] = useState<Date | null>(null);
+  const [editingHealthLog, setEditingHealthLog] = useState<HealthLog | null>(null);
 
   const getDateTimeValue = (target: DateTimeTarget) => {
     switch (target) {
@@ -220,8 +312,6 @@ export default function LogsScreen() {
         return diaperDateTime;
       case 'health':
         return healthDateTime;
-      case 'edit':
-        return editDateTime?.value ?? null;
     }
   };
 
@@ -242,10 +332,6 @@ export default function LogsScreen() {
       case 'health':
         setHealthDateTime(value);
         return;
-      case 'edit':
-        if (value) {
-          setEditDateTime((current) => current ? { ...current, value } : current);
-        }
     }
   };
 
@@ -331,10 +417,25 @@ export default function LogsScreen() {
     setEditingFeedingLog(null);
   };
 
+  const resetSleepForm = () => {
+    setEditingSleepLog(null);
+    setSleepStart(null);
+    setSleepEnd(null);
+  };
+
   const openAddModal = (tab: LogTab) => {
     setDateTimePicker(null);
     if (tab === 'feeding') {
       resetFeedingForm();
+    }
+    if (tab === 'sleep') {
+      resetSleepForm();
+    }
+    if (tab === 'diaper') {
+      resetDiaperForm();
+    }
+    if (isHealthTab(tab)) {
+      resetHealthForm();
     }
     setModalType(tab);
   };
@@ -346,6 +447,42 @@ export default function LogsScreen() {
     setFeedType((['breast', 'formula', 'mixed', 'solid'].includes(log.type) ? log.type : 'breast') as FeedingType);
     setFeedDateTime(new Date(log.fed_at));
     setModalType('feeding');
+  };
+
+  const openSleepEditor = (log: SleepLog) => {
+    setDateTimePicker(null);
+    setEditingSleepLog(log);
+    setSleepStart(new Date(log.started_at));
+    setSleepEnd(log.ended_at ? new Date(log.ended_at) : null);
+    setModalType('sleep');
+  };
+
+  const resetDiaperForm = () => {
+    setEditingDiaperLog(null);
+    setDiaperDateTime(null);
+    setDiaperType('wet');
+  };
+
+  const openDiaperEditor = (log: DiaperLog) => {
+    setDateTimePicker(null);
+    setEditingDiaperLog(log);
+    setDiaperDateTime(new Date(log.changed_at));
+    const t = log.type;
+    setDiaperType(
+      t === 'wet' || t === 'dirty' || t === 'both' || t === 'dry' ? t : 'wet',
+    );
+    setModalType('diaper');
+  };
+
+  const openHealthEditor = (log: HealthLog) => {
+    if (!isHealthTab(log.type)) return;
+    setDateTimePicker(null);
+    setEditingHealthLog(log);
+    setHealthTitle(log.title);
+    setHealthValue(log.value ?? '');
+    setHealthMemo(log.memo ?? '');
+    setHealthDateTime(new Date(log.recorded_at));
+    setModalType(log.type);
   };
 
   const handleSaveFeeding = async () => {
@@ -379,40 +516,57 @@ export default function LogsScreen() {
 
   const handleSaveSleep = async () => {
     if (!activeChild) return;
-    const { error } = await supabase.from('sleep_logs').insert({
-      child_id: activeChild.id,
-      started_at: (sleepStart ?? new Date()).toISOString(),
-      ended_at: sleepEnd ? sleepEnd.toISOString() : null,
-    });
+    const startedAt = (sleepStart ?? new Date()).toISOString();
+    const endedAt = sleepEnd ? sleepEnd.toISOString() : null;
+
+    const { error } = editingSleepLog
+      ? await supabase
+        .from('sleep_logs')
+        .update({
+          started_at: startedAt,
+          ended_at: endedAt,
+        })
+        .eq('id', editingSleepLog.id)
+      : await supabase.from('sleep_logs').insert({
+        child_id: activeChild.id,
+        started_at: startedAt,
+        ended_at: endedAt,
+      });
+
     if (error) {
       console.error('[SleepLog] 저장 실패:', error.code, error.message, error.details);
       Alert.alert('저장 실패', `${error.message}\n\n코드: ${error.code}`);
       return;
     }
-    setSleepStart(null);
-    setSleepEnd(null);
+    resetSleepForm();
     setModalType(null);
     loadLogs();
   };
 
   const handleSaveDiaper = async () => {
     if (!activeChild) return;
-    const { error } = await supabase.from('diaper_logs').insert({
-      child_id: activeChild.id,
-      changed_at: (diaperDateTime ?? new Date()).toISOString(),
-      type: diaperType,
-    });
+    const changedAt = (diaperDateTime ?? new Date()).toISOString();
+    const payload = { changed_at: changedAt, type: diaperType };
+
+    const { error } = editingDiaperLog
+      ? await supabase.from('diaper_logs').update(payload).eq('id', editingDiaperLog.id)
+      : await supabase.from('diaper_logs').insert({
+        child_id: activeChild.id,
+        ...payload,
+      });
+
     if (error) {
       console.error('[DiaperLog] 저장 실패:', error.code, error.message, error.details);
       Alert.alert('저장 실패', `${error.message}\n\n코드: ${error.code}`);
       return;
     }
-    setDiaperDateTime(null);
+    resetDiaperForm();
     setModalType(null);
     loadLogs();
   };
 
   const resetHealthForm = () => {
+    setEditingHealthLog(null);
     setHealthTitle('');
     setHealthValue('');
     setHealthMemo('');
@@ -420,6 +574,7 @@ export default function LogsScreen() {
   };
 
   const closeLogModal = () => {
+    Keyboard.dismiss();
     setDateTimePicker(null);
     if (modalType === 'feeding') {
       resetFeedingForm();
@@ -427,12 +582,13 @@ export default function LogsScreen() {
     if (isHealthTab(modalType)) {
       resetHealthForm();
     }
+    if (modalType === 'sleep') {
+      resetSleepForm();
+    }
+    if (modalType === 'diaper') {
+      resetDiaperForm();
+    }
     setModalType(null);
-  };
-
-  const closeEditDateTimeModal = () => {
-    setDateTimePicker(null);
-    setEditDateTime(null);
   };
 
   const handleSaveHealth = async () => {
@@ -442,15 +598,26 @@ export default function LogsScreen() {
     const title = healthTitle.trim() || config.label;
     const value = healthValue.trim() || null;
     const memo = healthMemo.trim() || null;
+    const recordedAt = (healthDateTime ?? new Date()).toISOString();
 
-    const { error } = await supabase.from('health_logs').insert({
-      child_id: activeChild.id,
-      recorded_at: (healthDateTime ?? new Date()).toISOString(),
-      type: modalType,
-      title,
-      value,
-      memo,
-    });
+    const { error } = editingHealthLog
+      ? await supabase
+        .from('health_logs')
+        .update({
+          recorded_at: recordedAt,
+          title,
+          value,
+          memo,
+        })
+        .eq('id', editingHealthLog.id)
+      : await supabase.from('health_logs').insert({
+        child_id: activeChild.id,
+        recorded_at: recordedAt,
+        type: modalType,
+        title,
+        value,
+        memo,
+      });
 
     if (error) {
       console.error('[HealthLog] 저장 실패:', error.code, error.message, error.details);
@@ -460,40 +627,6 @@ export default function LogsScreen() {
 
     resetHealthForm();
     setModalType(null);
-    loadLogs();
-  };
-
-  const openEditDateTime = (
-    title: string,
-    table: EditableDateTimeTable,
-    column: string,
-    id: string,
-    iso: string,
-  ) => {
-    setEditDateTime({
-      title,
-      table,
-      column,
-      id,
-      value: new Date(iso),
-    });
-  };
-
-  const handleSaveEditDateTime = async () => {
-    if (!editDateTime) return;
-
-    const { error } = await supabase
-      .from(editDateTime.table)
-      .update({ [editDateTime.column]: editDateTime.value.toISOString() })
-      .eq('id', editDateTime.id);
-
-    if (error) {
-      console.error('[LogDateTime] 수정 실패:', error.code, error.message, error.details);
-      Alert.alert('수정 실패', `${error.message}\n\n코드: ${error.code}`);
-      return;
-    }
-
-    setEditDateTime(null);
     loadLogs();
   };
 
@@ -561,7 +694,7 @@ export default function LogsScreen() {
 
   if (!activeChild) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <View style={styles.empty}>
           <Ionicons name="person-add-outline" size={48} color={Colors.textLight} />
           <Text style={styles.emptyText}>등록된 아이가 없습니다</Text>
@@ -580,7 +713,7 @@ export default function LogsScreen() {
   // ─── 렌더링 ───────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>기록</Text>
         <Text style={styles.headerSub}>{activeChild.name} · 최근 7일</Text>
@@ -616,7 +749,7 @@ export default function LogsScreen() {
       <ScrollView
         style={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: LIST_PADDING_BOTTOM }}
       >
         {activeTab === 'feeding' && feedingLogs.map((log, index) => (
           <React.Fragment key={log.id}>
@@ -651,7 +784,11 @@ export default function LogsScreen() {
                 <Text style={styles.dateHeaderText}>{formatDateHeader(log.started_at)}</Text>
               </View>
             )}
-            <View style={styles.logCard}>
+            <TouchableOpacity
+              style={styles.logCard}
+              activeOpacity={0.85}
+              onPress={() => openSleepEditor(log)}
+            >
               <View style={[styles.logIconBox, { backgroundColor: '#EDE7F6' }]}>
                 <Ionicons name="moon" size={20} color="#7E57C2" />
               </View>
@@ -660,30 +797,18 @@ export default function LogsScreen() {
                   수면 {formatDuration(log.duration_minutes)}
                 </Text>
                 <View style={styles.sleepTimeRow}>
-                  <TouchableOpacity
-                    onPress={() => openEditDateTime('수면 시작 시간 수정', 'sleep_logs', 'started_at', log.id, log.started_at)}
-                  >
-                    <Text style={styles.logTime}>{formatTime(log.started_at)}</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.logTime}>{formatTime(log.started_at)}</Text>
                   {log.ended_at ? (
                     <>
                       <Text style={styles.logTime}> ~ </Text>
-                      <TouchableOpacity
-                        onPress={() => openEditDateTime('수면 종료 시간 수정', 'sleep_logs', 'ended_at', log.id, log.ended_at!)}
-                      >
-                        <Text style={styles.logTime}>{formatTime(log.ended_at)}</Text>
-                      </TouchableOpacity>
+                      <Text style={styles.logTime}>{formatTime(log.ended_at)}</Text>
                     </>
                   ) : (
-                    <TouchableOpacity
-                      onPress={() => openEditDateTime('수면 종료 시간 추가', 'sleep_logs', 'ended_at', log.id, new Date().toISOString())}
-                    >
-                      <Text style={styles.logTime}> (진행 중)</Text>
-                    </TouchableOpacity>
+                    <Text style={styles.logTime}> (진행 중)</Text>
                   )}
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
           </React.Fragment>
         ))}
 
@@ -694,7 +819,11 @@ export default function LogsScreen() {
                 <Text style={styles.dateHeaderText}>{formatDateHeader(log.changed_at)}</Text>
               </View>
             )}
-            <View style={styles.logCard}>
+            <TouchableOpacity
+              style={styles.logCard}
+              activeOpacity={0.85}
+              onPress={() => openDiaperEditor(log)}
+            >
               <View style={[styles.logIconBox, { backgroundColor: '#FFF8E1' }]}>
                 <Ionicons name="refresh-circle" size={20} color="#FFA000" />
               </View>
@@ -702,13 +831,9 @@ export default function LogsScreen() {
                 <Text style={styles.logTitle}>
                   {log.type === 'wet' ? '소변' : log.type === 'dirty' ? '대변' : log.type === 'both' ? '소변+대변' : '교체'}
                 </Text>
-                <TouchableOpacity
-                  onPress={() => openEditDateTime('기저귀 날짜/시간 수정', 'diaper_logs', 'changed_at', log.id, log.changed_at)}
-                >
-                  <Text style={styles.logTime}>{formatTime(log.changed_at)}</Text>
-                </TouchableOpacity>
+                <Text style={styles.logTime}>{formatTime(log.changed_at)}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           </React.Fragment>
         ))}
 
@@ -722,7 +847,11 @@ export default function LogsScreen() {
                   <Text style={styles.dateHeaderText}>{formatDateHeader(log.recorded_at)}</Text>
                 </View>
               )}
-              <View style={styles.logCard}>
+              <TouchableOpacity
+                style={styles.logCard}
+                activeOpacity={0.85}
+                onPress={() => openHealthEditor(log)}
+              >
                 <View style={[styles.logIconBox, { backgroundColor: config.backgroundColor }]}>
                   <Ionicons name={config.icon} size={20} color={config.color} />
                 </View>
@@ -733,13 +862,9 @@ export default function LogsScreen() {
                   {log.memo ? (
                     <Text style={styles.logMemo}>{log.memo}</Text>
                   ) : null}
-                  <TouchableOpacity
-                    onPress={() => openEditDateTime(`${config.label} 날짜/시간 수정`, 'health_logs', 'recorded_at', log.id, log.recorded_at)}
-                  >
-                    <Text style={styles.logTime}>{formatTime(log.recorded_at)}</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.logTime}>{formatTime(log.recorded_at)}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             </React.Fragment>
           );
         })}
@@ -748,10 +873,10 @@ export default function LogsScreen() {
           (activeTab === 'sleep' && sleepLogs.length === 0) ||
           (activeTab === 'diaper' && diaperLogs.length === 0) ||
           (isHealthTab(activeTab) && activeHealthLogs.length === 0)) && (
-          <View style={styles.emptyList}>
-            <Text style={styles.emptyListText}>최근 7일간 기록이 없습니다</Text>
-          </View>
-        )}
+            <View style={styles.emptyList}>
+              <Text style={styles.emptyListText}>최근 7일간 기록이 없습니다</Text>
+            </View>
+          )}
       </ScrollView>
 
       {/* 추가 버튼 */}
@@ -760,182 +885,196 @@ export default function LogsScreen() {
       </TouchableOpacity>
 
       {/* ─── 수유 모달 ─── */}
-      <Modal visible={modalType === 'feeding'} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={closeLogModal}>
-          <Pressable style={styles.modalBox} onPress={() => {}}>
-            <Text style={styles.modalTitle}>
-              {editingFeedingLog ? '수유 기록 수정' : '수유 기록'}
-            </Text>
-            {renderDateTimeField('날짜/시간', feedDateTime, 'feed', '선택하지 않으면 현재 시각으로 저장돼요')}
-            <Text style={styles.modalLabel}>유형</Text>
-            <View style={styles.optionRow}>
-              {([
-                { val: 'breast', label: '모유' },
-                { val: 'formula', label: '분유' },
-                { val: 'mixed', label: '혼합' },
-                { val: 'solid', label: '이유식' },
-              ] as const).map(({ val, label }) => (
-                <TouchableOpacity
-                  key={val}
-                  style={[styles.option, feedType === val && styles.optionActive]}
-                  onPress={() => setFeedType(val)}
-                >
-                  <Text style={[styles.optionText, feedType === val && styles.optionTextActive]}>{label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={styles.modalLabel}>양 (ml, 선택)</Text>
-            <TextInput
-              style={styles.input}
-              value={feedAmount}
-              onChangeText={setFeedAmount}
-              keyboardType="numeric"
-              placeholder="예: 150"
-              placeholderTextColor={Colors.textLight}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={closeLogModal}>
-                <Text style={styles.cancelBtnText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveFeeding}>
-                <Text style={styles.saveBtnText}>{editingFeedingLog ? '수정' : '저장'}</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <LogSheetModal visible={modalType === 'feeding'} onClose={closeLogModal} numericAccessory>
+        <Text style={styles.modalTitle}>
+          {editingFeedingLog ? '수유 기록 수정' : '수유 기록'}
+        </Text>
+        {renderDateTimeField('날짜/시간', feedDateTime, 'feed', '선택하지 않으면 현재 시각으로 저장돼요')}
+        <Text style={styles.modalLabel}>유형</Text>
+        <View style={styles.optionRow}>
+          {([
+            { val: 'breast', label: '모유' },
+            { val: 'formula', label: '분유' },
+            { val: 'mixed', label: '혼합' },
+            { val: 'solid', label: '이유식' },
+          ] as const).map(({ val, label }) => (
+            <TouchableOpacity
+              key={val}
+              style={[styles.option, feedType === val && styles.optionActive]}
+              onPress={() => setFeedType(val)}
+            >
+              <Text style={[styles.optionText, feedType === val && styles.optionTextActive]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={styles.modalLabel}>양 (ml, 선택)</Text>
+        <TextInput
+          style={styles.input}
+          value={feedAmount}
+          onChangeText={setFeedAmount}
+          keyboardType="numeric"
+          placeholder="예: 150"
+          placeholderTextColor={Colors.textLight}
+          inputAccessoryViewID={Platform.OS === 'ios' ? IOS_NUMERIC_INPUT_ACCESSORY_ID : undefined}
+          returnKeyType="done"
+          blurOnSubmit
+          onSubmitEditing={Keyboard.dismiss}
+        />
+        <View style={styles.modalActions}>
+          <TouchableOpacity style={styles.cancelBtn} onPress={closeLogModal}>
+            <Text style={styles.cancelBtnText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSaveFeeding}>
+            <Text style={styles.saveBtnText}>{editingFeedingLog ? '수정' : '저장'}</Text>
+          </TouchableOpacity>
+        </View>
+      </LogSheetModal>
 
       {/* ─── 수면 모달 ─── */}
-      <Modal visible={modalType === 'sleep'} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={closeLogModal}>
-          <Pressable style={styles.modalBox} onPress={() => {}}>
-            <Text style={styles.modalTitle}>수면 기록</Text>
-            {renderDateTimeField('시작 날짜/시간', sleepStart, 'sleepStart', '선택하지 않으면 현재 시각으로 시작돼요')}
-            {renderDateTimeField('종료 날짜/시간', sleepEnd, 'sleepEnd', '선택하지 않으면 진행 중으로 저장돼요')}
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalType(null)}>
-                <Text style={styles.cancelBtnText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveSleep}>
-                <Text style={styles.saveBtnText}>저장</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <LogSheetModal
+        visible={modalType === 'sleep'}
+        onClose={() => {
+          Keyboard.dismiss();
+          setDateTimePicker(null);
+          resetSleepForm();
+          setModalType(null);
+        }}
+      >
+        <Text style={styles.modalTitle}>
+          {editingSleepLog ? '수면 기록 수정' : '수면 기록'}
+        </Text>
+        {renderDateTimeField('시작 날짜/시간', sleepStart, 'sleepStart', '선택하지 않으면 현재 시각으로 시작돼요')}
+        {renderDateTimeField('종료 날짜/시간', sleepEnd, 'sleepEnd', '선택하지 않으면 진행 중으로 저장돼요')}
+        <View style={styles.modalActions}>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={() => {
+              Keyboard.dismiss();
+              setDateTimePicker(null);
+              resetSleepForm();
+              setModalType(null);
+            }}
+          >
+            <Text style={styles.cancelBtnText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSaveSleep}>
+            <Text style={styles.saveBtnText}>{editingSleepLog ? '수정' : '저장'}</Text>
+          </TouchableOpacity>
+        </View>
+      </LogSheetModal>
 
       {/* ─── 기저귀 모달 ─── */}
-      <Modal visible={modalType === 'diaper'} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={closeLogModal}>
-          <Pressable style={styles.modalBox} onPress={() => {}}>
-            <Text style={styles.modalTitle}>기저귀 교체 기록</Text>
-            {renderDateTimeField('날짜/시간', diaperDateTime, 'diaper', '선택하지 않으면 현재 시각으로 저장돼요')}
-            <Text style={styles.modalLabel}>유형</Text>
-            <View style={styles.optionRow}>
-              {([
-                { val: 'wet', label: '소변' },
-                { val: 'dirty', label: '대변' },
-                { val: 'both', label: '소변+대변' },
-                { val: 'dry', label: '교체만' },
-              ] as const).map(({ val, label }) => (
-                <TouchableOpacity
-                  key={val}
-                  style={[styles.option, diaperType === val && styles.optionActive]}
-                  onPress={() => setDiaperType(val)}
-                >
-                  <Text style={[styles.optionText, diaperType === val && styles.optionTextActive]}>{label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalType(null)}>
-                <Text style={styles.cancelBtnText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveDiaper}>
-                <Text style={styles.saveBtnText}>저장</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <LogSheetModal
+        visible={modalType === 'diaper'}
+        onClose={() => {
+          Keyboard.dismiss();
+          setDateTimePicker(null);
+          resetDiaperForm();
+          setModalType(null);
+        }}
+      >
+        <Text style={styles.modalTitle}>
+          {editingDiaperLog ? '기저귀 기록 수정' : '기저귀 교체 기록'}
+        </Text>
+        {renderDateTimeField('날짜/시간', diaperDateTime, 'diaper', '선택하지 않으면 현재 시각으로 저장돼요')}
+        <Text style={styles.modalLabel}>유형</Text>
+        <View style={styles.optionRow}>
+          {([
+            { val: 'wet', label: '소변' },
+            { val: 'dirty', label: '대변' },
+            { val: 'both', label: '소변+대변' },
+            { val: 'dry', label: '교체만' },
+          ] as const).map(({ val, label }) => (
+            <TouchableOpacity
+              key={val}
+              style={[styles.option, diaperType === val && styles.optionActive]}
+              onPress={() => setDiaperType(val)}
+            >
+              <Text style={[styles.optionText, diaperType === val && styles.optionTextActive]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={styles.modalActions}>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={() => {
+              Keyboard.dismiss();
+              setDateTimePicker(null);
+              resetDiaperForm();
+              setModalType(null);
+            }}
+          >
+            <Text style={styles.cancelBtnText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSaveDiaper}>
+            <Text style={styles.saveBtnText}>{editingDiaperLog ? '수정' : '저장'}</Text>
+          </TouchableOpacity>
+        </View>
+      </LogSheetModal>
 
       {/* ─── 건강 모달 ─── */}
-      <Modal visible={modalHealthConfig !== null} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={closeLogModal}>
-          <Pressable style={styles.modalBox} onPress={() => {}}>
-            <Text style={styles.modalTitle}>
-              {modalHealthConfig?.label ?? '건강'} 기록
-            </Text>
-            {renderDateTimeField('날짜/시간', healthDateTime, 'health', '선택하지 않으면 현재 시각으로 저장돼요')}
-            <Text style={styles.modalLabel}>{modalHealthConfig?.titleLabel}</Text>
-            <TextInput
-              style={styles.input}
-              value={healthTitle}
-              onChangeText={setHealthTitle}
-              placeholder={modalHealthConfig?.titlePlaceholder}
-              placeholderTextColor={Colors.textLight}
-            />
-            <Text style={styles.modalLabel}>{modalHealthConfig?.valueLabel}</Text>
-            <TextInput
-              style={styles.input}
-              value={healthValue}
-              onChangeText={setHealthValue}
-              keyboardType={modalType === 'temperature' ? 'decimal-pad' : 'default'}
-              placeholder={modalHealthConfig?.valuePlaceholder}
-              placeholderTextColor={Colors.textLight}
-            />
-            <Text style={styles.modalLabel}>메모 (선택)</Text>
-            <TextInput
-              style={[styles.input, styles.memoInput]}
-              value={healthMemo}
-              onChangeText={setHealthMemo}
-              multiline
-              placeholder="상세 증상, 복용 후 반응, 진료 메모 등을 적어주세요"
-              placeholderTextColor={Colors.textLight}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => {
-                  resetHealthForm();
-                  setModalType(null);
-                }}
-              >
-                <Text style={styles.cancelBtnText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveHealth}>
-                <Text style={styles.saveBtnText}>저장</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* ─── 날짜/시간 수정 모달 ─── */}
-      <Modal visible={editDateTime !== null} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={closeEditDateTimeModal}>
-          <Pressable style={styles.modalBox} onPress={() => {}}>
-            <Text style={styles.modalTitle}>{editDateTime?.title ?? '날짜/시간 수정'}</Text>
-            {editDateTime
-              ? renderDateTimeField(
-                '날짜/시간',
-                editDateTime.value,
-                'edit',
-                '',
-                false,
-              )
-              : null}
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditDateTime(null)}>
-                <Text style={styles.cancelBtnText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveEditDateTime}>
-                <Text style={styles.saveBtnText}>수정</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <LogSheetModal
+        visible={modalHealthConfig !== null}
+        onClose={closeLogModal}
+        numericAccessory={modalType === 'temperature'}
+      >
+        <Text style={styles.modalTitle}>
+          {editingHealthLog
+            ? `${modalHealthConfig?.label ?? '건강'} 기록 수정`
+            : `${modalHealthConfig?.label ?? '건강'} 기록`}
+        </Text>
+        {renderDateTimeField('날짜/시간', healthDateTime, 'health', '선택하지 않으면 현재 시각으로 저장돼요')}
+        <Text style={styles.modalLabel}>{modalHealthConfig?.titleLabel}</Text>
+        <TextInput
+          style={styles.input}
+          value={healthTitle}
+          onChangeText={setHealthTitle}
+          placeholder={modalHealthConfig?.titlePlaceholder}
+          placeholderTextColor={Colors.textLight}
+        />
+        <Text style={styles.modalLabel}>{modalHealthConfig?.valueLabel}</Text>
+        <TextInput
+          style={styles.input}
+          value={healthValue}
+          onChangeText={setHealthValue}
+          keyboardType={modalType === 'temperature' ? 'decimal-pad' : 'default'}
+          placeholder={modalHealthConfig?.valuePlaceholder}
+          placeholderTextColor={Colors.textLight}
+          inputAccessoryViewID={
+            Platform.OS === 'ios' && modalType === 'temperature'
+              ? IOS_NUMERIC_INPUT_ACCESSORY_ID
+              : undefined
+          }
+          returnKeyType="done"
+          blurOnSubmit
+          onSubmitEditing={Keyboard.dismiss}
+        />
+        <Text style={styles.modalLabel}>메모 (선택)</Text>
+        <TextInput
+          style={[styles.input, styles.memoInput]}
+          value={healthMemo}
+          onChangeText={setHealthMemo}
+          multiline
+          placeholder="상세 증상, 복용 후 반응, 진료 메모 등을 적어주세요"
+          placeholderTextColor={Colors.textLight}
+        />
+        <View style={styles.modalActions}>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={() => {
+              Keyboard.dismiss();
+              setDateTimePicker(null);
+              resetHealthForm();
+              setModalType(null);
+            }}
+          >
+            <Text style={styles.cancelBtnText}>취소</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSaveHealth}>
+            <Text style={styles.saveBtnText}>{editingHealthLog ? '수정' : '저장'}</Text>
+          </TouchableOpacity>
+        </View>
+      </LogSheetModal>
 
     </SafeAreaView>
   );
@@ -1022,7 +1161,7 @@ const styles = StyleSheet.create({
   emptyText: { color: Colors.textSecondary, fontSize: 16 },
   fab: {
     position: 'absolute',
-    bottom: 24,
+    bottom: FAB_GAP_ABOVE_TAB,
     right: 24,
     width: 56,
     height: 56,
@@ -1032,10 +1171,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...Shadows.md,
   },
-  modalOverlay: {
+  modalKeyboardRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: MODAL_DIM,
+  },
+  modalDimBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: MODAL_DIM,
+  },
+  modalSheetWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    maxHeight: '92%',
+    zIndex: 2,
+    elevation: 24,
+  },
+  inputAccessoryBar: {
+    flexDirection: 'row',
     justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    backgroundColor: '#E8E8ED',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#C6C6C8',
+  },
+  inputAccessoryDone: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#007AFF',
   },
   modalBox: {
     backgroundColor: Colors.surface,

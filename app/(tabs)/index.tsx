@@ -295,7 +295,7 @@ export default function HomeScreen() {
 
   if (!activeChild) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <View style={styles.empty}>
           <Text style={styles.emptyText}>아이 정보가 없습니다.</Text>
         </View>
@@ -304,7 +304,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.container}
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: Spacing.lg,
-    paddingBottom: Spacing.xxl + Spacing.md,
+    paddingBottom: Spacing.lg,
   },
   profileCard: {
     backgroundColor: Colors.surface,

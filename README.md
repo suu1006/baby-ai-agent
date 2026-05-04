@@ -19,29 +19,19 @@ Claude API 기반 육아 전문 AI 어시스턴트 모바일 앱 (React Native +
 
 ## 시작하기
 
-### 1. 환경변수 설정
-
-`.env.local` 파일에 아래 값들을 입력하세요:
-
-```
-EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-EXPO_PUBLIC_CLAUDE_API_KEY=your_anthropic_api_key
-```
-
-### 2. Supabase 설정
+### 1. Supabase 설정
 
 1. [supabase.com](https://supabase.com)에서 새 프로젝트 생성
-2. `supabase/migrations/001_initial_schema.sql`을 Supabase SQL Editor에서 실행
-3. 프로젝트 URL과 anon key를 `.env.local`에 입력
+2. `supabase/migrations`의 SQL을 Supabase SQL Editor에서 순서대로 실행
+3. 앱이 Supabase·AI 등 외부 서비스에 접근하려면, 프로젝트에서 요구하는 방식으로 자격 증명(환경 변수 등)을 설정하세요.
 
-### 3. 의존성 설치
+### 2. 의존성 설치
 
 ```bash
 npm install
 ```
 
-### 4. 개발 서버 실행
+### 3. 개발 서버 실행
 
 ```bash
 # Expo Go로 실행
@@ -53,6 +43,14 @@ npx expo start --ios
 # Android 에뮬레이터
 npx expo start --android
 ```
+
+### Expo Go (실기기)
+
+1. 터미널에서 `npx expo start` 실행  
+2. 맥과 폰을 **같은 Wi‑Fi**에 연결  
+3. **QR 코드 스캔**: iPhone은 기본 카메라, Android는 Expo Go 앱에서 스캔  
+
+대부분은 위 세 가지만으로 연결됩니다. 같은 Wi‑Fi인데도 붙지 않을 때만 `npx expo start --tunnel`로 다시 시도하세요.
 
 ## 빌드 & 배포
 

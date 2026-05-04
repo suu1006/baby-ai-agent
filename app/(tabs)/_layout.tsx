@@ -1,8 +1,13 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/theme';
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  /** 홈 인디케이터 영역 — 탭 아이콘 위쪽 여백은 두지 않음 */
+  const tabBarBottomPad = insets.bottom + 12;
+
   return (
     <Tabs
       screenOptions={{
@@ -12,8 +17,9 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: Colors.surface,
           borderTopColor: Colors.border,
-          height: 60,
-          paddingBottom: 8,
+          paddingTop: 0,
+          paddingBottom: tabBarBottomPad,
+          height: 52 + tabBarBottomPad,
         },
         tabBarLabelStyle: {
           fontSize: 11,
