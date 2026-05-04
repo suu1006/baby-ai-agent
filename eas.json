@@ -6,11 +6,7 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "",
-        "EXPO_PUBLIC_CLAUDE_API_KEY": ""
-      }
+      "env": {}
     },
     "preview": {
       "distribution": "internal",
@@ -20,11 +16,7 @@
     },
     "production": {
       "autoIncrement": true,
-      "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "",
-        "EXPO_PUBLIC_CLAUDE_API_KEY": ""
-      }
+      "env": {}
     }
   },
   "submit": {

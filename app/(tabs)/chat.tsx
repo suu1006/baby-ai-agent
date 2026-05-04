@@ -354,10 +354,17 @@ export default function ChatScreen() {
         style: 'destructive',
         onPress: async () => {
           if (!activeChild) return;
-          await supabase
+          const { error } = await supabase
             .from('chat_messages')
             .delete()
             .eq('child_id', activeChild.id);
+
+          if (error) {
+            console.error('[Chat Clear Error]', error.message);
+            Alert.alert('삭제 실패', `대화 내역을 삭제하지 못했습니다.\n\n${error.message}`);
+            return;
+          }
+
           setMessages([]);
         },
       },

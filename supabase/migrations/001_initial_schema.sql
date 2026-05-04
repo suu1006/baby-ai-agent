@@ -60,6 +60,16 @@ CREATE POLICY "Users can insert chat messages for their children"
     )
   );
 
+CREATE POLICY "Users can delete chat messages for their children"
+  ON chat_messages FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM children
+      WHERE children.id = chat_messages.child_id
+      AND children.user_id = auth.uid()
+    )
+  );
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_children_user_id ON children(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_child_created ON chat_messages(child_id, created_at DESC);
