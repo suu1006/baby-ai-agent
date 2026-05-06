@@ -422,15 +422,15 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.metricRow}>
-          <View style={styles.metricCard}>
+          <View style={[styles.metricCard, styles.feedingMetricCard]}>
             <Text style={styles.metricValue}>{todayFeedings.length}회</Text>
             <Text style={styles.metricLabel}>수유</Text>
           </View>
-          <View style={styles.metricCard}>
+          <View style={[styles.metricCard, styles.sleepMetricCard]}>
             <Text style={styles.metricValue}>{formatDuration(todaySleepMinutes)}</Text>
             <Text style={styles.metricLabel}>수면</Text>
           </View>
-          <View style={styles.metricCard}>
+          <View style={[styles.metricCard, styles.diaperMetricCard]}>
             <Text style={styles.metricValue}>{todayDiapers.length}회</Text>
             <Text style={styles.metricLabel}>기저귀</Text>
           </View>
@@ -639,13 +639,23 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flex: 1,
-    backgroundColor: Colors.surface,
     borderRadius: Radius.md,
     paddingVertical: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
     ...Shadows.sm,
+  },
+  feedingMetricCard: {
+    backgroundColor: '#FFF8D8',
+    borderColor: '#F6E9A8',
+  },
+  sleepMetricCard: {
+    backgroundColor: '#FFEAF1',
+    borderColor: '#F7C9D8',
+  },
+  diaperMetricCard: {
+    backgroundColor: '#EAF8E8',
+    borderColor: '#C8EAC2',
   },
   metricValue: {
     fontSize: 22,

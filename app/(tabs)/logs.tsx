@@ -24,9 +24,11 @@ import { Colors, Spacing, Radius, Shadows } from '../../constants/theme';
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+type OverviewLogTab = 'all';
 type PrimaryLogTab = 'feeding' | 'sleep' | 'diaper';
 type HealthLogType = 'medication' | 'temperature' | 'hospital' | 'symptom';
-type LogTab = PrimaryLogTab | HealthLogType;
+type LogTab = OverviewLogTab | PrimaryLogTab | HealthLogType;
 type DateTimeTarget = 'feed' | 'sleepStart' | 'sleepEnd' | 'diaper' | 'health';
 type DateTimePickerMode = 'date' | 'time';
 type FeedingType = 'breast' | 'formula' | 'mixed' | 'solid';
@@ -42,11 +44,24 @@ type HealthLog = {
   value: string | null;
   memo: string | null;
 };
+type TimelineItem =
+  | { id: string; tab: 'feeding'; at: string; title: string; subtitle: string; icon: IconName; color: string; backgroundColor: string; log: FeedingLog }
+  | { id: string; tab: 'sleep'; at: string; title: string; subtitle: string; detail: string; icon: IconName; color: string; backgroundColor: string; log: SleepLog }
+  | { id: string; tab: 'diaper'; at: string; title: string; subtitle: string; icon: IconName; color: string; backgroundColor: string; log: DiaperLog }
+  | { id: string; tab: HealthLogType; at: string; title: string; subtitle: string; icon: IconName; color: string; backgroundColor: string; log: HealthLog };
+
+const ALL_TAB = {
+  key: 'all',
+  label: '전체',
+  icon: 'list',
+  color: Colors.primary,
+  backgroundColor: Colors.primaryLight,
+} as const;
 
 const PRIMARY_TABS = [
-  { key: 'feeding', label: '수유', icon: 'water' },
-  { key: 'sleep', label: '수면', icon: 'moon' },
-  { key: 'diaper', label: '기저귀', icon: 'refresh-circle' },
+  { key: 'feeding', label: '수유', icon: 'water', color: '#5B9BD5', backgroundColor: '#EBF3FB' },
+  { key: 'sleep', label: '수면', icon: 'moon', color: '#7E57C2', backgroundColor: '#EDE7F6' },
+  { key: 'diaper', label: '기저귀', icon: 'refresh-circle', color: '#FFA000', backgroundColor: '#FFF8E1' },
 ] as const;
 
 const HEALTH_TABS = [
@@ -102,6 +117,26 @@ function isHealthTab(tab: LogTab | null): tab is HealthLogType {
 
 function getHealthConfig(type: HealthLogType) {
   return HEALTH_TABS.find((item) => item.key === type) ?? HEALTH_TABS[0];
+}
+
+function feedingLabel(type: string) {
+  return type === 'breast'
+    ? '모유'
+    : type === 'formula'
+      ? '분유'
+      : type === 'mixed'
+        ? '혼합'
+        : '이유식';
+}
+
+function diaperLabel(type: string) {
+  return type === 'wet'
+    ? '소변'
+    : type === 'dirty'
+      ? '대변'
+      : type === 'both'
+        ? '소변+대변'
+        : '교체';
 }
 
 // ─── 도우미 ───────────────────────────────────────────────────────────────────
@@ -163,6 +198,50 @@ function formatTimeButton(date: Date) {
   });
 }
 
+function startOfLocalDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function endOfLocalDay(date: Date) {
+  const next = startOfLocalDay(date);
+  next.setDate(next.getDate() + 1);
+  return next;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getWeekStart(date: Date) {
+  const start = startOfLocalDay(date);
+  start.setDate(start.getDate() - start.getDay());
+  return start;
+}
+
+function isSameLocalDate(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+
+function formatCalendarMonth(date: Date) {
+  return date.toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+  });
+}
+
+function withCurrentTime(date: Date) {
+  const now = new Date();
+  const next = new Date(date);
+  next.setHours(now.getHours(), now.getMinutes(), 0, 0);
+  return next;
+}
+
 function formatDuration(minutes: number | null) {
   if (!minutes) return '-';
   const h = Math.floor(minutes / 60);
@@ -171,6 +250,7 @@ function formatDuration(minutes: number | null) {
 }
 
 const IOS_NUMERIC_INPUT_ACCESSORY_ID = 'logsNumericInputAccessory';
+const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
 /** + 버튼과 바텀 탭 사이 / 리스트가 FAB에 가리지 않도록 */
 const FAB_SIZE = 56;
@@ -269,12 +349,13 @@ function LogSheetModal({
 
 export default function LogsScreen() {
   const { activeChild } = useChildStore();
-  const [activeTab, setActiveTab] = useState<LogTab>('feeding');
+  const [activeTab, setActiveTab] = useState<LogTab>('all');
   const [feedingLogs, setFeedingLogs] = useState<FeedingLog[]>([]);
   const [sleepLogs, setSleepLogs] = useState<SleepLog[]>([]);
   const [diaperLogs, setDiaperLogs] = useState<DiaperLog[]>([]);
   const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [modalType, setModalType] = useState<LogTab | null>(null);
   const [dateTimePicker, setDateTimePicker] = useState<{
     target: DateTimeTarget;
@@ -359,46 +440,49 @@ export default function LogsScreen() {
 
   const loadLogs = useCallback(async () => {
     if (!activeChild) return;
-    const since = new Date();
-    since.setDate(since.getDate() - 7);
-    const sinceISO = since.toISOString();
+    const dayStartISO = startOfLocalDay(selectedDate).toISOString();
+    const dayEndISO = endOfLocalDay(selectedDate).toISOString();
 
     const [feeding, sleep, diaper, health] = await Promise.all([
       supabase
         .from('feeding_logs')
         .select('id, fed_at, amount_ml, type')
         .eq('child_id', activeChild.id)
-        .gte('fed_at', sinceISO)
+        .gte('fed_at', dayStartISO)
+        .lt('fed_at', dayEndISO)
         .order('fed_at', { ascending: false })
-        .limit(30),
+        .limit(100),
       supabase
         .from('sleep_logs')
         .select('id, started_at, ended_at, duration_minutes')
         .eq('child_id', activeChild.id)
-        .gte('started_at', sinceISO)
+        .gte('started_at', dayStartISO)
+        .lt('started_at', dayEndISO)
         .order('started_at', { ascending: false })
-        .limit(30),
+        .limit(100),
       supabase
         .from('diaper_logs')
         .select('id, changed_at, type')
         .eq('child_id', activeChild.id)
-        .gte('changed_at', sinceISO)
+        .gte('changed_at', dayStartISO)
+        .lt('changed_at', dayEndISO)
         .order('changed_at', { ascending: false })
-        .limit(30),
+        .limit(100),
       supabase
         .from('health_logs')
         .select('id, recorded_at, type, title, value, memo')
         .eq('child_id', activeChild.id)
-        .gte('recorded_at', sinceISO)
+        .gte('recorded_at', dayStartISO)
+        .lt('recorded_at', dayEndISO)
         .order('recorded_at', { ascending: false })
-        .limit(60),
+        .limit(100),
     ]);
 
     if (feeding.data) setFeedingLogs(feeding.data);
     if (sleep.data) setSleepLogs(sleep.data);
     if (diaper.data) setDiaperLogs(diaper.data);
     if (health.data) setHealthLogs(health.data as HealthLog[]);
-  }, [activeChild]);
+  }, [activeChild, selectedDate]);
 
   useEffect(() => { loadLogs(); }, [loadLogs]);
 
@@ -427,15 +511,19 @@ export default function LogsScreen() {
     setDateTimePicker(null);
     if (tab === 'feeding') {
       resetFeedingForm();
+      setFeedDateTime(withCurrentTime(selectedDate));
     }
     if (tab === 'sleep') {
       resetSleepForm();
+      setSleepStart(withCurrentTime(selectedDate));
     }
     if (tab === 'diaper') {
       resetDiaperForm();
+      setDiaperDateTime(withCurrentTime(selectedDate));
     }
     if (isHealthTab(tab)) {
       resetHealthForm();
+      setHealthDateTime(withCurrentTime(selectedDate));
     }
     setModalType(tab);
   };
@@ -709,6 +797,59 @@ export default function LogsScreen() {
   const modalHealthConfig = isHealthTab(modalType)
     ? getHealthConfig(modalType)
     : null;
+  const calendarWeekStart = getWeekStart(selectedDate);
+  const calendarDays = Array.from({ length: 7 }, (_, index) => addDays(calendarWeekStart, index));
+  const timelineItems: TimelineItem[] = [
+    ...feedingLogs.map((log) => ({
+      id: `feeding-${log.id}`,
+      tab: 'feeding' as const,
+      at: log.fed_at,
+      title: `${feedingLabel(log.type)}${log.amount_ml ? ` · ${log.amount_ml}ml` : ''}`,
+      subtitle: '수유',
+      icon: 'water' as IconName,
+      color: '#5B9BD5',
+      backgroundColor: '#EBF3FB',
+      log,
+    })),
+    ...sleepLogs.map((log) => ({
+      id: `sleep-${log.id}`,
+      tab: 'sleep' as const,
+      at: log.started_at,
+      title: `수면 ${formatDuration(log.duration_minutes)}`,
+      subtitle: '수면',
+      detail: log.ended_at ? `${formatTime(log.started_at)} ~ ${formatTime(log.ended_at)}` : `${formatTime(log.started_at)} 시작 · 진행 중`,
+      icon: 'moon' as IconName,
+      color: '#7E57C2',
+      backgroundColor: '#EDE7F6',
+      log,
+    })),
+    ...diaperLogs.map((log) => ({
+      id: `diaper-${log.id}`,
+      tab: 'diaper' as const,
+      at: log.changed_at,
+      title: diaperLabel(log.type),
+      subtitle: '기저귀',
+      icon: 'refresh-circle' as IconName,
+      color: '#FFA000',
+      backgroundColor: '#FFF8E1',
+      log,
+    })),
+    ...healthLogs.map((log) => {
+      const config = getHealthConfig(log.type);
+
+      return {
+        id: `health-${log.id}`,
+        tab: log.type,
+        at: log.recorded_at,
+        title: `${log.title}${log.value ? ` · ${log.value}` : ''}`,
+        subtitle: config.label,
+        icon: config.icon as IconName,
+        color: config.color,
+        backgroundColor: config.backgroundColor,
+        log,
+      };
+    }),
+  ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
   // ─── 렌더링 ───────────────────────────────────────────────────────────────
 
@@ -716,31 +857,88 @@ export default function LogsScreen() {
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>기록</Text>
-        <Text style={styles.headerSub}>{activeChild.name} · 최근 7일</Text>
+        <Text style={styles.headerSub}>{activeChild.name} · {formatDateButton(selectedDate)}</Text>
+      </View>
+
+      <View style={styles.calendarCard}>
+        <View style={styles.calendarHeader}>
+          <TouchableOpacity
+            style={styles.calendarNavButton}
+            onPress={() => setSelectedDate((prev) => addDays(prev, -7))}
+          >
+            <Ionicons name="chevron-back" size={18} color={Colors.textSecondary} />
+          </TouchableOpacity>
+          <Text style={styles.calendarTitle}>{formatCalendarMonth(selectedDate)}</Text>
+          <TouchableOpacity
+            style={styles.calendarNavButton}
+            onPress={() => setSelectedDate((prev) => addDays(prev, 7))}
+          >
+            <Ionicons name="chevron-forward" size={18} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.calendarDays}>
+          {calendarDays.map((day) => {
+            const selected = isSameLocalDate(day, selectedDate);
+            const today = isSameLocalDate(day, new Date());
+
+            return (
+              <TouchableOpacity
+                key={day.toISOString()}
+                style={[
+                  styles.calendarDay,
+                  today && styles.calendarDayToday,
+                  selected && styles.calendarDaySelected,
+                ]}
+                onPress={() => setSelectedDate(day)}
+              >
+                <Text style={[styles.calendarWeekday, selected && styles.calendarTextSelected]}>
+                  {WEEKDAY_LABELS[day.getDay()]}
+                </Text>
+                <Text style={[styles.calendarDate, selected && styles.calendarTextSelected]}>
+                  {day.getDate()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {!isSameLocalDate(selectedDate, new Date()) ? (
+          <TouchableOpacity style={styles.todayButton} onPress={() => setSelectedDate(new Date())}>
+            <Text style={styles.todayButtonText}>오늘로 이동</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* 탭 */}
       <View style={styles.tabRow}>
-        {PRIMARY_TABS.map(({ key, label, icon }) => (
+        {[ALL_TAB, ...PRIMARY_TABS].map(({ key, label, icon, color, backgroundColor }) => (
           <TouchableOpacity
             key={key}
-            style={[styles.tab, activeTab === key && styles.tabActive]}
+            style={[
+              styles.tab,
+              activeTab === key && styles.tabActive,
+              activeTab === key && { backgroundColor, borderColor: color },
+            ]}
             onPress={() => setActiveTab(key)}
           >
-            <Ionicons name={icon} size={16} color={activeTab === key ? Colors.primary : Colors.textSecondary} />
-            <Text style={[styles.tabText, activeTab === key && styles.tabTextActive]}>{label}</Text>
+            <Ionicons name={icon} size={16} color={activeTab === key ? color : Colors.textSecondary} />
+            <Text style={[styles.tabText, activeTab === key && styles.tabTextActive, activeTab === key && { color }]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
       <View style={[styles.tabRow, styles.healthTabRow]}>
-        {HEALTH_TABS.map(({ key, label, icon, color }) => (
+        {HEALTH_TABS.map(({ key, label, icon, color, backgroundColor }) => (
           <TouchableOpacity
             key={key}
-            style={[styles.tab, styles.healthTab, activeTab === key && styles.tabActive]}
+            style={[
+              styles.tab,
+              styles.healthTab,
+              activeTab === key && styles.tabActive,
+              activeTab === key && { backgroundColor, borderColor: color },
+            ]}
             onPress={() => setActiveTab(key)}
           >
             <Ionicons name={icon} size={15} color={activeTab === key ? color : Colors.textSecondary} />
-            <Text style={[styles.tabText, activeTab === key && styles.tabTextActive]}>{label}</Text>
+            <Text style={[styles.tabText, activeTab === key && styles.tabTextActive, activeTab === key && { color }]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -751,6 +949,44 @@ export default function LogsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{ paddingBottom: LIST_PADDING_BOTTOM }}
       >
+        {activeTab === 'all' && timelineItems.map((item, index) => (
+          <React.Fragment key={item.id}>
+            {shouldShowDateHeader(timelineItems, index, (timelineItem) => timelineItem.at) && (
+              <View style={styles.dateHeader}>
+                <Text style={styles.dateHeaderText}>{formatDateHeader(item.at)}</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.logCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                if (item.tab === 'feeding') openFeedingEditor(item.log);
+                if (item.tab === 'sleep') openSleepEditor(item.log);
+                if (item.tab === 'diaper') openDiaperEditor(item.log);
+                if (isHealthTab(item.tab)) openHealthEditor(item.log as HealthLog);
+              }}
+            >
+              <View style={[styles.logIconBox, { backgroundColor: item.backgroundColor }]}>
+                <Ionicons name={item.icon} size={20} color={item.color} />
+              </View>
+              <View style={styles.logInfo}>
+                <View style={styles.timelineTitleRow}>
+                  <Text style={styles.logTitle}>{item.title}</Text>
+                  {item.tab !== 'sleep' ? (
+                    <Text style={[styles.timelineBadge, { color: item.color, backgroundColor: item.backgroundColor }]}>
+                      {item.subtitle}
+                    </Text>
+                  ) : null}
+                </View>
+                {'memo' in item.log && item.log.memo ? (
+                  <Text style={styles.logMemo}>{item.log.memo}</Text>
+                ) : null}
+                <Text style={styles.logTime}>{item.tab === 'sleep' ? item.detail : formatTime(item.at)}</Text>
+              </View>
+            </TouchableOpacity>
+          </React.Fragment>
+        ))}
+
         {activeTab === 'feeding' && feedingLogs.map((log, index) => (
           <React.Fragment key={log.id}>
             {shouldShowDateHeader(feedingLogs, index, (item) => item.fed_at) && (
@@ -768,7 +1004,7 @@ export default function LogsScreen() {
               </View>
               <View style={styles.logInfo}>
                 <Text style={styles.logTitle}>
-                  {log.type === 'breast' ? '모유' : log.type === 'formula' ? '분유' : log.type === 'mixed' ? '혼합' : '이유식'}
+                  {feedingLabel(log.type)}
                   {log.amount_ml ? ` · ${log.amount_ml}ml` : ''}
                 </Text>
                 <Text style={styles.logTime}>{formatTime(log.fed_at)}</Text>
@@ -829,7 +1065,7 @@ export default function LogsScreen() {
               </View>
               <View style={styles.logInfo}>
                 <Text style={styles.logTitle}>
-                  {log.type === 'wet' ? '소변' : log.type === 'dirty' ? '대변' : log.type === 'both' ? '소변+대변' : '교체'}
+                  {diaperLabel(log.type)}
                 </Text>
                 <Text style={styles.logTime}>{formatTime(log.changed_at)}</Text>
               </View>
@@ -869,20 +1105,23 @@ export default function LogsScreen() {
           );
         })}
 
-        {((activeTab === 'feeding' && feedingLogs.length === 0) ||
+        {((activeTab === 'all' && timelineItems.length === 0) ||
+          (activeTab === 'feeding' && feedingLogs.length === 0) ||
           (activeTab === 'sleep' && sleepLogs.length === 0) ||
           (activeTab === 'diaper' && diaperLogs.length === 0) ||
           (isHealthTab(activeTab) && activeHealthLogs.length === 0)) && (
             <View style={styles.emptyList}>
-              <Text style={styles.emptyListText}>최근 7일간 기록이 없습니다</Text>
+              <Text style={styles.emptyListText}>선택한 날짜에 기록이 없습니다</Text>
             </View>
           )}
       </ScrollView>
 
       {/* 추가 버튼 */}
-      <TouchableOpacity style={styles.fab} onPress={() => openAddModal(activeTab)}>
-        <Ionicons name="add" size={28} color="#fff" />
-      </TouchableOpacity>
+      {activeTab !== 'all' ? (
+        <TouchableOpacity style={styles.fab} onPress={() => openAddModal(activeTab)}>
+          <Ionicons name="add" size={28} color="#fff" />
+        </TouchableOpacity>
+      ) : null}
 
       {/* ─── 수유 모달 ─── */}
       <LogSheetModal visible={modalType === 'feeding'} onClose={closeLogModal} numericAccessory>
@@ -1091,6 +1330,81 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 24, fontWeight: '800', color: Colors.text },
   headerSub: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  calendarCard: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    padding: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    ...Shadows.sm,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  calendarTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  calendarNavButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+  },
+  calendarDays: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  calendarDay: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  calendarDayToday: {
+    borderColor: Colors.primary,
+  },
+  calendarDaySelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  calendarWeekday: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  calendarDate: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  calendarTextSelected: {
+    color: Colors.white,
+  },
+  todayButton: {
+    alignSelf: 'center',
+    marginTop: Spacing.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.primaryLight,
+  },
+  todayButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
   tabRow: {
     flexDirection: 'row',
     marginHorizontal: Spacing.lg,
@@ -1148,6 +1462,19 @@ const styles = StyleSheet.create({
   },
   logInfo: { flex: 1 },
   logTitle: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  timelineTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  timelineBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    fontSize: 11,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
   logMemo: { fontSize: 13, color: Colors.textSecondary, marginTop: 2, lineHeight: 18 },
   sleepTimeRow: {
     flexDirection: 'row',
