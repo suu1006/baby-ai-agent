@@ -1,6 +1,6 @@
 const OLLAMA_BASE_URL = process.env.EXPO_PUBLIC_OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_API_URL = `${OLLAMA_BASE_URL}/api/chat`;
-const MODEL = process.env.EXPO_PUBLIC_OLLAMA_MODEL || 'llama3.1';
+const MODEL = process.env.EXPO_PUBLIC_OLLAMA_MODEL || 'gemma3n:e2b';
 const DEFAULT_NUM_PREDICT = 700;
 const DEFAULT_TEMPERATURE = 0.4;
 
@@ -17,6 +17,15 @@ const OLLAMA_OPTIONS = {
   ),
   temperature: DEFAULT_TEMPERATURE,
 };
+
+function formatOllamaError(status: number, errorText: string): string {
+  const modelHint =
+    status === 404 || errorText.toLowerCase().includes('model')
+      ? ` 모델(${MODEL})이 설치되어 있는지 확인하고, 없으면 "ollama pull ${MODEL}"을 실행해주세요.`
+      : '';
+
+  return `Ollama 서버 오류 (${status}): ${errorText}${modelHint}`;
+}
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -75,8 +84,7 @@ function parseOllamaStreamLine(
 function shouldUseXHRStreaming() {
   return (
     typeof XMLHttpRequest !== 'undefined' &&
-    typeof navigator !== 'undefined' &&
-    navigator.product === 'ReactNative'
+    (typeof navigator === 'undefined' || navigator.product === 'ReactNative')
   );
 }
 
@@ -106,7 +114,7 @@ function callLLMStreamWithXHR(
     xhr.onreadystatechange = () => {
       if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED && xhr.status >= 400 && !settled) {
         settled = true;
-        reject(new Error(`Ollama 서버 오류 (${xhr.status}): ${xhr.responseText}`));
+        reject(new Error(formatOllamaError(xhr.status, xhr.responseText)));
       }
     };
     xhr.onprogress = () => {
@@ -126,7 +134,7 @@ function callLLMStreamWithXHR(
       }
 
       if (xhr.status >= 400) {
-        reject(new Error(`Ollama 서버 오류 (${xhr.status}): ${xhr.responseText}`));
+        reject(new Error(formatOllamaError(xhr.status, xhr.responseText)));
         return;
       }
 
@@ -135,7 +143,11 @@ function callLLMStreamWithXHR(
     xhr.onerror = () => {
       if (settled) return;
       settled = true;
-      reject(new Error('Ollama 스트리밍 연결에 실패했습니다.'));
+      reject(
+        new Error(
+          `Ollama 스트리밍 연결에 실패했습니다. Ollama가 실행 중인지, EXPO_PUBLIC_OLLAMA_URL(${OLLAMA_BASE_URL})이 현재 기기에서 접근 가능한 주소인지 확인해주세요.`
+        )
+      );
     };
     xhr.ontimeout = () => {
       if (settled) return;
@@ -161,16 +173,24 @@ export async function callLLMStream(
     return callLLMStreamWithXHR(requestBody, onToken);
   }
 
-  const response = await fetch(OLLAMA_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: requestBody,
-  });
+  let response: Response;
+  try {
+    response = await fetch(OLLAMA_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: requestBody,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Ollama 서버에 연결할 수 없습니다. Ollama가 실행 중인지, EXPO_PUBLIC_OLLAMA_URL(${OLLAMA_BASE_URL})이 현재 기기에서 접근 가능한 주소인지 확인해주세요. 원인: ${msg}`
+    );
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
     console.error('[LLM Stream Error]', response.status, errorText);
-    throw new Error(`Ollama 서버 오류 (${response.status}): ${errorText}`);
+    throw new Error(formatOllamaError(response.status, errorText));
   }
 
   if (!response.body) {
@@ -219,16 +239,24 @@ export async function callLLM(
     body.tools = tools;
   }
 
-  const response = await fetch(OLLAMA_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(OLLAMA_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Ollama 서버에 연결할 수 없습니다. Ollama가 실행 중인지, EXPO_PUBLIC_OLLAMA_URL(${OLLAMA_BASE_URL})이 현재 기기에서 접근 가능한 주소인지 확인해주세요. 원인: ${msg}`
+    );
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
     console.error('[LLM Error]', response.status, errorText);
-    throw new Error(`Ollama 서버 오류 (${response.status}): ${errorText}`);
+    throw new Error(formatOllamaError(response.status, errorText));
   }
 
   const data = await response.json();

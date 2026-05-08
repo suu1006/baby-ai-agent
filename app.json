@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "육아 AI",
+    "name": "베비맘",
     "slug": "baby-ai-agent",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,7 +15,13 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.babyai.agent"
+      "bundleIdentifier": "com.babyai.agent",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -23,6 +29,7 @@
         "backgroundColor": "#FFF5F0"
       },
       "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.babyai.agent",
       "permissions": [

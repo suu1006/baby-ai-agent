@@ -170,7 +170,7 @@ export default function SettingsScreen() {
           <Text style={styles.signOutText}>로그아웃</Text>
         </TouchableOpacity>
 
-        <Text style={styles.footer}>육아 AI - 우리 아이의 성장을 함께해요</Text>
+        <Text style={styles.footer}>베비맘 - 우리 아이의 성장을 함께해요</Text>
       </ScrollView>
     </SafeAreaView>
   );

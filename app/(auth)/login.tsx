@@ -3,10 +3,10 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -38,16 +38,14 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'position' : 'height'}
         style={styles.flex}
+        keyboardVerticalOffset={0}
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-        >
+        <View style={styles.container}>
           <View style={styles.header}>
-            <Text style={styles.emoji}>👶</Text>
-            <Text style={styles.title}>육아 AI</Text>
+            <Image source={require('../../assets/bebimom_logo.png')} style={styles.logo} />
+            <Text style={styles.title}>베비맘</Text>
             <Text style={styles.subtitle}>우리 아이의 성장을 함께 기록해요</Text>
           </View>
 
@@ -88,7 +86,7 @@ export default function LoginScreen() {
               variant="outline"
             />
           </View>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -103,7 +101,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    flexGrow: 1,
+    flex: 1,
     padding: Spacing.lg,
     justifyContent: 'center',
   },
@@ -111,8 +109,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.xxl,
   },
-  emoji: {
-    fontSize: 64,
+  logo: {
+    width: 80,
+    height: 80,
+    resizeMode: 'contain',
     marginBottom: Spacing.sm,
   },
   title: {

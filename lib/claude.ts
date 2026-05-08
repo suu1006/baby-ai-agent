@@ -1,6 +1,6 @@
 const OLLAMA_BASE_URL = process.env.EXPO_PUBLIC_OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_API_URL = `${OLLAMA_BASE_URL}/api/chat`;
-const MODEL = 'llama3.2:3b';
+const MODEL = process.env.EXPO_PUBLIC_OLLAMA_MODEL || 'gemma3n:e2b';
 
 export type ChatMessage = {
   role: 'user' | 'assistant';

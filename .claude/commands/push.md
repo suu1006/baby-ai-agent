@@ -14,6 +14,8 @@ git diff
 git diff --cached
 ```
 
+변경사항이 없으면 (git status가 clean) "커밋할 변경사항이 없습니다"라고 보고하고 즉시 종료하세요.
+
 수집한 내용을 바탕으로 다음 형식으로 사용자에게 보고하세요:
 
 ---
@@ -80,16 +82,22 @@ git add -A
 git commit -m "확정된 커밋 메시지"
 ```
 
-3. 현재 브랜치 확인 후 푸시:
+3. 현재 브랜치 확인 후 원격 최신화 및 푸시:
 ```bash
 git branch --show-current
+git pull origin 현재브랜치명 --rebase
 git push origin 현재브랜치명
 ```
 
-4. 성공 시 결과를 사용자에게 보고:
+4. 실제 커밋 해시 확인:
+```bash
+git log --oneline -1
+```
+
+5. 성공 시 결과를 사용자에게 보고:
 ---
 **[완료]**
-- 커밋: `커밋 해시` — `커밋 메시지`
+- 커밋: `커밋 해시 (git log --oneline -1 결과값)` — `커밋 메시지`
 - 푸시: `origin/브랜치명`
 - GitHub: https://github.com/suu1006/baby-ai-agent
 ---

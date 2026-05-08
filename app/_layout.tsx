@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Stack, router, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useChildStore } from '../store/childStore';
 import { supabase, supabaseConfigError } from '../lib/supabase';
@@ -37,13 +39,17 @@ function useProtectedRoute() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboarding = segments[0] === 'onboarding';
+    const inLanding = segments[0] === 'landing';
+    const isWeb = Platform.OS === 'web';
 
     if (!session) {
-      if (!inAuthGroup) {
+      if (!inAuthGroup && !inLanding) {
+        router.replace(isWeb ? '/landing' : '/(auth)/login');
+      } else if (!isWeb && inLanding) {
         router.replace('/(auth)/login');
       }
     } else {
-      if (inAuthGroup) {
+      if (inAuthGroup || inLanding) {
         fetchChildren(session.user.id).then(() => {
           const hasChildren = useChildStore.getState().children.length > 0;
           if (hasChildren) {
@@ -65,9 +71,21 @@ function useProtectedRoute() {
 }
 
 export default function RootLayout() {
+  const segments = useSegments();
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+  });
+
   useProtectedRoute();
 
-  if (supabaseConfigError) {
+  if (!fontsLoaded) {
+    return null;
+  }
+
+  const isPublicLanding =
+    Platform.OS === 'web' && (!segments[0] || segments[0] === 'landing');
+
+  if (supabaseConfigError && !isPublicLanding) {
     return (
       <View style={styles.configErrorContainer}>
         <StatusBar style="dark" />
@@ -86,6 +104,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(auth)" />
+        <Stack.Screen name="landing" />
         <Stack.Screen name="onboarding" />
       </Stack>
     </>

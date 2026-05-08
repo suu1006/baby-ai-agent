@@ -1,10 +1,10 @@
 # 육아 AI 에이전트 앱
 
-Claude API 기반 육아 전문 AI 어시스턴트 모바일 앱 (React Native + Expo)
+Ollama Gemma 3n E2B 기반 육아 전문 AI 어시스턴트 모바일 앱 (React Native + Expo)
 
 ## 주요 기능
 
-- **AI 육아 상담**: Claude API를 활용한 아이 맞춤 육아 Q&A
+- **AI 육아 상담**: Ollama Gemma 3n E2B를 활용한 아이 맞춤 육아 Q&A
 - **육아 일기**: 기분, 사진, 마일스톤 포함 일별 기록
 - **성장 기록**: 키/몸무게 트래킹 및 차트 시각화
 - **홈 대시보드**: 오늘의 기록 요약 및 빠른 접근
@@ -14,7 +14,7 @@ Claude API 기반 육아 전문 AI 어시스턴트 모바일 앱 (React Native +
 - React Native + Expo (SDK 54)
 - Expo Router (파일 기반 네비게이션)
 - Supabase (인증, DB, 스토리지)
-- Anthropic Claude API (AI 엔진)
+- Ollama Gemma 3n E2B (AI 엔진)
 - Zustand (상태 관리)
 
 ## 시작하기
