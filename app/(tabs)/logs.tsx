@@ -639,7 +639,7 @@ export default function LogsScreen() {
     const { error } = editingDiaperLog
       ? await supabase.from('diaper_logs').update(payload).eq('id', editingDiaperLog.id)
       : await supabase.from('diaper_logs').insert({
-        child_id: activeChild.id,
+        child_id: activeChild.id, 
         ...payload,
       });
 

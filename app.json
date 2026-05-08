@@ -9,7 +9,7 @@
     "newArchEnabled": false,
     "scheme": "baby-ai",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/bebimom_logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFF5F0"
     },

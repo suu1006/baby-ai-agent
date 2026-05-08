@@ -37,14 +37,14 @@ const TOOLS: ToolDefinition[] = [
     function: {
       name: 'search_baby_data',
       description:
-        '아이의 수유, 수면, 기저귀 기록 데이터를 Supabase DB에서 조회합니다. 아이의 최근 생활 패턴을 파악할 때 사용하세요.',
+        '아이의 수유, 수면, 기저귀, 건강/체온 기록 데이터를 Supabase DB에서 조회합니다. 아이의 최근 생활 패턴과 건강 상태를 파악할 때 사용하세요.',
       parameters: {
         type: 'object',
         properties: {
           data_type: {
             type: 'string',
             description: '조회할 데이터 유형',
-            enum: ['feeding', 'sleep', 'diaper', 'all'],
+            enum: ['feeding', 'sleep', 'diaper', 'health', 'all'],
           },
           days: {
             type: 'string',
@@ -60,7 +60,7 @@ const TOOLS: ToolDefinition[] = [
     function: {
       name: 'analyze_pattern',
       description:
-        '수유/수면/기저귀 원시 데이터를 받아 통계적 패턴을 분석합니다. 평균, 최대, 최소, 빈도 등을 계산합니다.',
+        '수유/수면/기저귀/건강 원시 데이터를 받아 통계적 패턴을 분석합니다. 평균, 최대, 최소, 빈도와 최신 건강 기록을 계산합니다.',
       parameters: {
         type: 'object',
         properties: {
@@ -71,7 +71,7 @@ const TOOLS: ToolDefinition[] = [
           analysis_type: {
             type: 'string',
             description: '분석 유형',
-            enum: ['feeding_summary', 'sleep_summary', 'diaper_summary', 'overall'],
+            enum: ['feeding_summary', 'sleep_summary', 'diaper_summary', 'health_summary', 'overall'],
           },
         },
         required: ['data_json', 'analysis_type'],
@@ -180,7 +180,29 @@ async function searchBabyData(
     result.diaper = data ?? [];
   }
 
+  if (dataType === 'health' || dataType === 'all') {
+    const { data, error } = await supabase
+      .from('health_logs')
+      .select('recorded_at, type, title, value, memo')
+      .eq('child_id', childId)
+      .gte('recorded_at', sinceISO)
+      .order('recorded_at', { ascending: false })
+      .limit(50);
+    if (error) throw new Error(`건강 기록 조회 실패: ${error.message}`);
+    console.log(`[DB] health_logs 결과: ${data?.length ?? 0}건`);
+    result.health = data ?? [];
+  }
+
   return JSON.stringify(result);
+}
+
+function parseTemperatureValue(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const normalized = value.replace(',', '.');
+  const match = normalized.match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number.parseFloat(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function analyzePattern(dataJson: string, analysisType: string): string {
@@ -249,6 +271,34 @@ function analyzePattern(dataJson: string, analysisType: string): string {
     };
   }
 
+  if ((analysisType === 'health_summary' || analysisType === 'overall') && data.health) {
+    const healthLogs = data.health as {
+      recorded_at?: string;
+      type?: string;
+      title?: string;
+      value?: string | null;
+      memo?: string | null;
+    }[];
+    const temperatureLogs = healthLogs.filter((log) => log.type === 'temperature');
+    const feverRelatedLogs = healthLogs.filter((log) => {
+      const text = `${log.title ?? ''} ${log.value ?? ''} ${log.memo ?? ''}`;
+      return log.type === 'temperature' || text.includes('열') || text.includes('발열') || text.includes('체온');
+    });
+    const parsedTemperatures = temperatureLogs
+      .map((log) => parseTemperatureValue(log.value))
+      .filter((value): value is number => value !== null);
+
+    summary.health = {
+      totalHealthRecords: healthLogs.length,
+      totalTemperatureRecords: temperatureLogs.length,
+      latestHealthRecord: healthLogs[0] ?? null,
+      latestTemperatureRecord: temperatureLogs[0] ?? null,
+      latestFeverRelatedRecord: feverRelatedLogs[0] ?? null,
+      maxTemperatureCelsius: parsedTemperatures.length > 0 ? Math.max(...parsedTemperatures) : null,
+      records: healthLogs.slice(0, 10),
+    };
+  }
+
   return JSON.stringify(summary);
 }
 
@@ -306,6 +356,7 @@ function buildSystemPrompt(child: ChildContext): string {
 - 대화에 아이 기록 데이터가 제공된 경우 반드시 그 숫자를 그대로 사용하여 답변
 - 소변 횟수 = wet 기록 수 + both 기록 수 (both는 소변+대변 동시 포함)
 - 대변 횟수 = dirty 기록 수 + both 기록 수
+- 체온/열 질문은 건강 기록의 value 값을 반올림하거나 추정하지 말고 기록된 문자열 그대로 답변
 - 기록이 0건이면 "오늘은 아직 기록이 없어요"라고 안내
 - 응답은 간결하고 실용적으로
 - 마크다운 문법(##, **, 코드블록) 없이 일반 텍스트로만 답변
@@ -329,19 +380,24 @@ const DIAPER_KEYWORDS = [
   '기저귀', '변', '소변', '대변', '응가', '쉬', '똥', '오줌',
   '교체', '갈았', '갈아',
 ];
+const HEALTH_KEYWORDS = [
+  '건강', '체온', '열', '발열', '온도', '아파', '아픔', '증상',
+  '투약', '약', '해열제', '병원', '진료', '감기', '기침', '콧물',
+];
 // 데이터 조회 의도가 명시된 범용 키워드
 const DATA_QUERY_KEYWORDS = [
   '기록', '데이터', '통계', '패턴', '얼마나', '몇', '최근',
   '오늘', '이번 주', '이번주', '어제', '지난', '평균', '요즘',
 ];
 
-function detectDataIntent(text: string): { feeding: boolean; sleep: boolean; diaper: boolean } {
+function detectDataIntent(text: string): { feeding: boolean; sleep: boolean; diaper: boolean; health: boolean } {
   const lower = text;
   const hasDataQuery = DATA_QUERY_KEYWORDS.some((kw) => lower.includes(kw));
   return {
     feeding: FEEDING_KEYWORDS.some((kw) => lower.includes(kw)) || (hasDataQuery && lower.includes('수유')),
     sleep: SLEEP_KEYWORDS.some((kw) => lower.includes(kw)),
     diaper: DIAPER_KEYWORDS.some((kw) => lower.includes(kw)),
+    health: HEALTH_KEYWORDS.some((kw) => lower.includes(kw)),
   };
 }
 
@@ -350,6 +406,7 @@ function hasAnyDataKeyword(text: string): boolean {
     FEEDING_KEYWORDS.some((kw) => text.includes(kw)) ||
     SLEEP_KEYWORDS.some((kw) => text.includes(kw)) ||
     DIAPER_KEYWORDS.some((kw) => text.includes(kw)) ||
+    HEALTH_KEYWORDS.some((kw) => text.includes(kw)) ||
     DATA_QUERY_KEYWORDS.some((kw) => text.includes(kw))
   );
 }
@@ -400,6 +457,33 @@ function formatDataContext(
     };
     feeding?: unknown;
     sleep?: unknown;
+    health?: {
+      totalHealthRecords?: number;
+      totalTemperatureRecords?: number;
+      latestHealthRecord?: {
+        recorded_at?: string;
+        type?: string;
+        title?: string;
+        value?: string | null;
+        memo?: string | null;
+      } | null;
+      latestTemperatureRecord?: {
+        recorded_at?: string;
+        type?: string;
+        title?: string;
+        value?: string | null;
+        memo?: string | null;
+      } | null;
+      latestFeverRelatedRecord?: {
+        recorded_at?: string;
+        type?: string;
+        title?: string;
+        value?: string | null;
+        memo?: string | null;
+      } | null;
+      maxTemperatureCelsius?: number | null;
+      records?: unknown[];
+    };
   } = {};
 
   try {
@@ -431,6 +515,24 @@ function formatDataContext(
     lines.push(`수면 요약 JSON: ${JSON.stringify(analysis.sleep)}`);
   }
 
+  if (analysis.health) {
+    const health = analysis.health;
+    const latestTemperature = health.latestTemperatureRecord;
+    const latestFever = health.latestFeverRelatedRecord;
+    lines.push(
+      `건강 기록 요약: 총 ${health.totalHealthRecords ?? 0}건, 체온 기록 ${health.totalTemperatureRecords ?? 0}건`,
+      `가장 최근 체온 기록: ${latestTemperature
+        ? `${latestTemperature.value ?? '값 없음'} (${latestTemperature.title ?? '체온'}, ${latestTemperature.recorded_at ?? '시간 없음'})`
+        : '없음'}`,
+      `가장 최근 열 관련 기록: ${latestFever
+        ? `${latestFever.value ?? '값 없음'} (${latestFever.title ?? '건강 기록'}, ${latestFever.recorded_at ?? '시간 없음'})`
+        : '없음'}`,
+      `최고 체온: ${health.maxTemperatureCelsius ?? '계산 불가'}`,
+      '체온 value는 DB에 저장된 원문입니다. 질문에 체온을 답할 때 이 값을 반올림하거나 추정하지 말고 그대로 사용합니다.',
+      `최근 건강 기록 JSON: ${JSON.stringify(health.records ?? [])}`
+    );
+  }
+
   return `${lines.join('\n')}\n\n[분석 JSON]\n${analysisJson}\n\n[원시 데이터 요약]\n${rawDataJson.slice(0, 800)}`;
 }
 
@@ -455,7 +557,8 @@ function hasBabySpecificKeyword(text: string): boolean {
   return (
     FEEDING_KEYWORDS.some((kw) => text.includes(kw)) ||
     SLEEP_KEYWORDS.some((kw) => text.includes(kw)) ||
-    DIAPER_KEYWORDS.some((kw) => text.includes(kw))
+    DIAPER_KEYWORDS.some((kw) => text.includes(kw)) ||
+    HEALTH_KEYWORDS.some((kw) => text.includes(kw))
   );
 }
 
@@ -482,24 +585,27 @@ async function preloadDataContext(
   }
 
   // 명시적 데이터 관련 키워드가 있으면 전체 조회
-  if (!intent.feeding && !intent.sleep && !intent.diaper) {
+  if (!intent.feeding && !intent.sleep && !intent.diaper && !intent.health) {
     if (hasAnyDataKeyword(userQuery) && hasBabySpecificKeyword(userQuery)) {
       intent.feeding = true;
       intent.sleep = true;
       intent.diaper = true;
+      intent.health = true;
     } else {
       return null;
     }
   }
 
   const dataType =
-    intent.feeding && intent.sleep && intent.diaper
+    intent.feeding && intent.sleep && intent.diaper && intent.health
       ? 'all'
       : intent.feeding
       ? 'feeding'
       : intent.sleep
       ? 'sleep'
-      : 'diaper';
+      : intent.diaper
+      ? 'diaper'
+      : 'health';
 
   const window = getDataWindow(userQuery);
 
@@ -518,7 +624,8 @@ async function preloadDataContext(
     const typeLabel =
       dataType === 'feeding' ? '수유' :
       dataType === 'sleep' ? '수면' :
-      dataType === 'diaper' ? '기저귀' : '육아';
+      dataType === 'diaper' ? '기저귀' :
+      dataType === 'health' ? '건강/체온' : '육아';
     return `[아이 ${window.label} 데이터]\n${typeLabel} 기록 없음 - ${window.label} 기간에 ${typeLabel} 기록이 없습니다.`;
   }
 

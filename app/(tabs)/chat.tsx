@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,10 +11,12 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useChildStore } from '../../store/childStore';
 import { supabase } from '../../lib/supabase';
 import { runAgent, AgentMessage } from '../../lib/agent';
@@ -69,8 +71,11 @@ export default function ChatScreen() {
   const { activeChild } = useChildStore();
   const { question } = useLocalSearchParams<{ question?: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [historyMessages, setHistoryMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [assistantStatusText, setAssistantStatusText] = useState('답변을 준비하고 있어요...');
   const statusOpacityRef = useRef(new Animated.Value(1));
   const flatListRef = useRef<FlatList>(null);
@@ -87,29 +92,23 @@ export default function ChatScreen() {
   const composingStatusTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const composingStatusIndexRef = useRef(0);
 
-  useEffect(() => {
-    if (activeChild) loadChatHistory();
-  }, [activeChild]);
-
-  useEffect(() => {
-    if (!question || sending) return;
-    if (lastInjectedQuestionRef.current === question) return;
-
-    lastInjectedQuestionRef.current = question;
-    setInputText(question);
-    handleSend(question);
-  }, [question, sending, activeChild]);
-
   const loadChatHistory = async () => {
     if (!activeChild) return;
+    setHistoryLoading(true);
     const { data } = await supabase
       .from('chat_messages')
       .select('*')
       .eq('child_id', activeChild.id)
       .order('created_at', { ascending: true })
-      .limit(50);
+      .limit(100);
 
-    if (data) setMessages(data);
+    if (data) setHistoryMessages(data);
+    setHistoryLoading(false);
+  };
+
+  const openHistory = () => {
+    setHistoryVisible(true);
+    loadChatHistory();
   };
 
   const saveMessage = async (role: 'user' | 'assistant', content: string) => {
@@ -190,6 +189,29 @@ export default function ChatScreen() {
     statusQueueRef.current = [];
     clearComposingStatusLoop();
   };
+
+  const resetCurrentChat = useCallback(() => {
+    setMessages([]);
+    setInputText('');
+    stopTypewriter();
+    clearPendingStatusQueue();
+    streamedTextRef.current = '';
+  }, [activeChild?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      resetCurrentChat();
+    }, [resetCurrentChat])
+  );
+
+  useEffect(() => {
+    if (!question || sending) return;
+    if (lastInjectedQuestionRef.current === question) return;
+
+    lastInjectedQuestionRef.current = question;
+    setInputText(question);
+    handleSend(question);
+  }, [question, sending, activeChild]);
 
   const resetAssistantStatus = (status: string) => {
     clearPendingStatusQueue();
@@ -366,6 +388,7 @@ export default function ChatScreen() {
           }
 
           setMessages([]);
+          setHistoryMessages([]);
         },
       },
     ]);
@@ -421,6 +444,29 @@ export default function ChatScreen() {
     );
   };
 
+  const renderHistoryMessage = ({ item }: { item: Message }) => {
+    const isUser = item.role === 'user';
+
+    return (
+      <View style={[styles.historyItem, isUser ? styles.historyUserItem : styles.historyAssistantItem]}>
+        <View style={styles.historyItemHeader}>
+          <Text style={[styles.historyRole, isUser && styles.historyUserRole]}>
+            {isUser ? '나' : 'AI'}
+          </Text>
+          <Text style={styles.historyTime}>
+            {new Date(item.created_at).toLocaleString('ko-KR', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </Text>
+        </View>
+        <Text style={styles.historyContent}>{item.content}</Text>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardAvoidingView
@@ -436,8 +482,8 @@ export default function ChatScreen() {
               {activeChild?.name}에 대해 무엇이든 물어보세요
             </Text>
           </View>
-          <TouchableOpacity onPress={handleClearHistory}>
-            <Ionicons name="trash-outline" size={22} color={Colors.textSecondary} />
+          <TouchableOpacity style={styles.headerIconButton} onPress={openHistory}>
+            <Ionicons name="time-outline" size={22} color={Colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -506,6 +552,59 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={historyVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setHistoryVisible(false)}
+      >
+        <SafeAreaView style={styles.historySafe}>
+          <View style={styles.historyHeader}>
+            <TouchableOpacity
+              style={styles.historyHeaderButton}
+              onPress={() => setHistoryVisible(false)}
+            >
+              <Ionicons name="close" size={22} color={Colors.text} />
+            </TouchableOpacity>
+            <View style={styles.historyHeaderText}>
+              <Text style={styles.historyTitle}>대화 히스토리</Text>
+              <Text style={styles.historySubtitle}>
+                저장된 이전 질문과 답변
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.historyHeaderButton}
+              onPress={handleClearHistory}
+            >
+              <Ionicons name="trash-outline" size={21} color={Colors.error} />
+            </TouchableOpacity>
+          </View>
+
+          {historyLoading ? (
+            <View style={styles.historyLoading}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.historyLoadingText}>히스토리를 불러오고 있어요...</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={historyMessages}
+              keyExtractor={(item) => item.id}
+              renderItem={renderHistoryMessage}
+              contentContainerStyle={styles.historyList}
+              ListEmptyComponent={
+                <View style={styles.historyEmpty}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={34} color={Colors.textLight} />
+                  <Text style={styles.historyEmptyTitle}>아직 저장된 대화가 없어요</Text>
+                  <Text style={styles.historyEmptyText}>
+                    새 채팅에서 질문하면 이곳에 기록됩니다.
+                  </Text>
+                </View>
+              }
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -537,6 +636,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  headerIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   messageList: {
     padding: Spacing.md,
@@ -682,5 +791,114 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: Colors.textLight,
+  },
+  historySafe: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.lg,
+    paddingBottom: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  historyHeaderButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  historyHeaderText: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  historySubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  historyList: {
+    padding: Spacing.md,
+    paddingBottom: Spacing.xl,
+  },
+  historyItem: {
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  historyUserItem: {
+    borderColor: Colors.primaryLight,
+    backgroundColor: Colors.primaryLight,
+  },
+  historyAssistantItem: {
+    backgroundColor: Colors.surface,
+  },
+  historyItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+    gap: Spacing.sm,
+  },
+  historyRole: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: Colors.primary,
+  },
+  historyUserRole: {
+    color: Colors.text,
+  },
+  historyTime: {
+    fontSize: 11,
+    color: Colors.textLight,
+  },
+  historyContent: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: Colors.text,
+  },
+  historyLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  historyLoadingText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  historyEmpty: {
+    minHeight: 360,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+  historyEmptyTitle: {
+    marginTop: Spacing.md,
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  historyEmptyText: {
+    marginTop: Spacing.xs,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
 });
