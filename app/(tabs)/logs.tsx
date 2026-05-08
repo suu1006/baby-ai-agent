@@ -369,6 +369,7 @@ export default function LogsScreen() {
   // 수면 폼
   const [sleepStart, setSleepStart] = useState<Date | null>(null);
   const [sleepEnd, setSleepEnd] = useState<Date | null>(null);
+  const [sleepOngoing, setSleepOngoing] = useState(false);
   const [editingSleepLog, setEditingSleepLog] = useState<SleepLog | null>(null);
   // 기저귀 폼
   const [diaperType, setDiaperType] = useState<'wet' | 'dirty' | 'both' | 'dry'>('wet');
@@ -505,6 +506,7 @@ export default function LogsScreen() {
     setEditingSleepLog(null);
     setSleepStart(null);
     setSleepEnd(null);
+    setSleepOngoing(false);
   };
 
   const openAddModal = (tab: LogTab) => {
@@ -516,6 +518,7 @@ export default function LogsScreen() {
     if (tab === 'sleep') {
       resetSleepForm();
       setSleepStart(withCurrentTime(selectedDate));
+      setSleepOngoing(true);
     }
     if (tab === 'diaper') {
       resetDiaperForm();
@@ -541,6 +544,7 @@ export default function LogsScreen() {
     setDateTimePicker(null);
     setEditingSleepLog(log);
     setSleepStart(new Date(log.started_at));
+    setSleepOngoing(!log.ended_at);
     setSleepEnd(log.ended_at ? new Date(log.ended_at) : null);
     setModalType('sleep');
   };
@@ -604,8 +608,12 @@ export default function LogsScreen() {
 
   const handleSaveSleep = async () => {
     if (!activeChild) return;
-    const startedAt = (sleepStart ?? new Date()).toISOString();
-    const endedAt = sleepEnd ? sleepEnd.toISOString() : null;
+    const startedAtDate = sleepStart ?? new Date();
+    const startedAt = startedAtDate.toISOString();
+
+    // sleepOngoing이 true면 종료시간 없음, false면 sleepEnd 또는 현재 시각
+    const endedAtDate = sleepOngoing ? null : (sleepEnd ?? new Date());
+    const endedAt = endedAtDate ? endedAtDate.toISOString() : null;
 
     const { error } = editingSleepLog
       ? await supabase
@@ -740,7 +748,13 @@ export default function LogsScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.dateTimeButton}
-          onPress={() => setDateTimePicker({ target, mode: 'time' })}
+          onPress={() => {
+            if (!value) {
+              setDateTimeValue(target, new Date());
+            } else {
+              setDateTimePicker({ target, mode: 'time' });
+            }
+          }}
         >
           <Ionicons name="time-outline" size={18} color={Colors.primary} />
           <View style={styles.dateTimeInfo}>
@@ -1183,7 +1197,20 @@ export default function LogsScreen() {
           {editingSleepLog ? '수면 기록 수정' : '수면 기록'}
         </Text>
         {renderDateTimeField('시작 날짜/시간', sleepStart, 'sleepStart', '선택하지 않으면 현재 시각으로 시작돼요')}
-        {renderDateTimeField('종료 날짜/시간', sleepEnd, 'sleepEnd', '선택하지 않으면 진행 중으로 저장돼요')}
+        <TouchableOpacity
+          style={styles.checkboxRow}
+          activeOpacity={0.7}
+          onPress={() => {
+            setSleepOngoing(!sleepOngoing);
+            if (!sleepOngoing) setSleepEnd(null);
+          }}
+        >
+          <View style={[styles.checkbox, sleepOngoing && styles.checkboxChecked]}>
+            {sleepOngoing && <Ionicons name="checkmark" size={13} color="#fff" />}
+          </View>
+          <Text style={styles.checkboxLabel}>진행 중</Text>
+        </TouchableOpacity>
+        {!sleepOngoing && renderDateTimeField('종료 날짜/시간', sleepEnd, 'sleepEnd', '종료 시간을 선택해주세요')}
         <View style={styles.modalActions}>
           <TouchableOpacity
             style={styles.cancelBtn}
@@ -1704,4 +1731,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   saveBtnText: { fontSize: 15, color: '#fff', fontWeight: '700' },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
 });

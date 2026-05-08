@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, router, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -7,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
 import { useChildStore } from '../store/childStore';
 import { supabase, supabaseConfigError } from '../lib/supabase';
+import { AUTO_LOGIN_KEY, isAutoLoginEnabled } from '../lib/authPreferences';
 import { Colors, Spacing } from '../constants/theme';
 
 function useProtectedRoute() {
@@ -20,7 +22,13 @@ function useProtectedRoute() {
       return;
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const autoLogin = isAutoLoginEnabled(await AsyncStorage.getItem(AUTO_LOGIN_KEY));
+      if (session && !autoLogin) {
+        await supabase.auth.signOut();
+        setSession(null);
+        return;
+      }
       setSession(session);
     });
 

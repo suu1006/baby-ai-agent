@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,14 @@ import {
   Platform,
   Image,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import { AUTO_LOGIN_KEY, SAVED_EMAIL_KEY, isAutoLoginEnabled } from '../../lib/authPreferences';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Colors, Spacing } from '../../constants/theme';
@@ -19,7 +23,22 @@ import { Colors, Spacing } from '../../constants/theme';
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberEmail, setRememberEmail] = useState(false);
+  const [autoLogin, setAutoLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      AsyncStorage.getItem(SAVED_EMAIL_KEY),
+      AsyncStorage.getItem(AUTO_LOGIN_KEY),
+    ]).then(([savedEmail, savedAutoLogin]) => {
+      if (savedEmail) {
+        setEmail(savedEmail);
+        setRememberEmail(true);
+      }
+      setAutoLogin(isAutoLoginEnabled(savedAutoLogin));
+    });
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -33,7 +52,16 @@ export default function LoginScreen() {
 
     if (error) {
       Alert.alert('로그인 실패', '이메일 또는 비밀번호가 올바르지 않습니다.');
+      return;
     }
+
+    if (rememberEmail) {
+      await AsyncStorage.setItem(SAVED_EMAIL_KEY, email.trim());
+    } else {
+      await AsyncStorage.removeItem(SAVED_EMAIL_KEY);
+    }
+
+    await AsyncStorage.setItem(AUTO_LOGIN_KEY, autoLogin ? 'true' : 'false');
   };
 
   return (
@@ -70,6 +98,32 @@ export default function LoginScreen() {
               placeholder="비밀번호를 입력하세요"
               isPassword
             />
+
+            <TouchableOpacity
+              style={styles.rememberRow}
+              onPress={() => setRememberEmail((prev) => !prev)}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.checkbox, rememberEmail && styles.checkboxActive]}>
+                {rememberEmail && (
+                  <Ionicons name="checkmark" size={15} color={Colors.white} />
+                )}
+              </View>
+              <Text style={styles.rememberText}>이메일 저장</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.rememberRow}
+              onPress={() => setAutoLogin((prev) => !prev)}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.checkbox, autoLogin && styles.checkboxActive]}>
+                {autoLogin && (
+                  <Ionicons name="checkmark" size={15} color={Colors.white} />
+                )}
+              </View>
+              <Text style={styles.rememberText}>자동 로그인</Text>
+            </TouchableOpacity>
 
             <Button
               title="로그인"
@@ -114,13 +168,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xxl,
   },
   logo: {
-    width: 80,
-    height: 80,
+    width: 120,
+    height: 120,
     resizeMode: 'contain',
     marginBottom: Spacing.sm,
   },
   title: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: '800',
     color: Colors.primary,
     marginBottom: Spacing.xs,
@@ -132,6 +186,33 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 0,
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: Spacing.sm,
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  checkboxActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  rememberText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textSecondary,
   },
   loginButton: {
     marginTop: Spacing.sm,
