@@ -31,7 +31,25 @@ Ollama Gemma 3n E2B 기반 육아 전문 AI 어시스턴트 모바일 앱 (React
 npm install
 ```
 
-### 3. 개발 서버 실행
+### 3. Ollama 설정
+
+Ollama를 실행하고 앱에서 접근 가능한 주소를 `.env.local`에 설정하세요.
+
+```bash
+ollama pull gemma3n:e2b
+ollama serve
+```
+
+```bash
+EXPO_PUBLIC_OLLAMA_URL=http://<맥의-LAN-IP>:11434
+EXPO_PUBLIC_OLLAMA_MODEL=gemma3n:e2b
+EXPO_PUBLIC_OLLAMA_TIMEOUT_MS=300000
+EXPO_PUBLIC_OLLAMA_NUM_PREDICT=700
+```
+
+Expo Go를 실기기에서 실행할 때는 `localhost`가 맥이 아니라 휴대폰 자신을 가리킵니다. 맥의 LAN IP를 사용하세요. 응답이 자주 타임아웃되면 `EXPO_PUBLIC_OLLAMA_TIMEOUT_MS`를 늘리거나 `EXPO_PUBLIC_OLLAMA_NUM_PREDICT`를 줄이면 됩니다.
+
+### 4. 개발 서버 실행
 
 ```bash
 # Expo Go로 실행

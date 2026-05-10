@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Supabase ERD - AI Agent Builder</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 32px;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #f8fafc;
+      letter-spacing: -0.5px;
+    }
+    header p {
+      margin-top: 8px;
+      font-size: 14px;
+      color: #94a3b8;
+    }
+    .badge {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #1e40af22;
+      border: 1px solid #3b82f6;
+      color: #60a5fa;
+    }
+    .erd-container {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 40px 32px;
+      overflow: auto;
+    }
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+    .legend {
+      margin-top: 32px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .legend-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .legend-card h3 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .legend-card ul {
+      list-style: none;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.7;
+    }
+    .legend-card ul li span.type {
+      color: #64748b;
+      font-family: monospace;
+      font-size: 11px;
+    }
+    .legend-card ul li span.pk   { color: #f59e0b; font-weight: 600; }
+    .legend-card ul li span.fk   { color: #3b82f6; font-weight: 600; }
+    .legend-card ul li span.gen  { color: #a78bfa; font-weight: 600; }
+    .legend-card ul li span.chk  { color: #10b981; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Supabase ERD</h1>
+    <p>AI Agent Builder — Database Schema</p>
+    <span class="badge">6 Tables · RLS Enabled · CASCADE DELETE</span>
+  </header>
+
+  <div class="erd-container">
+    <div class="mermaid">
+erDiagram
+  auth_users {
+    uuid id PK
+    text email
+    timestamptz created_at
+  }
+
+  children {
+    uuid id PK
+    uuid user_id FK
+    text name
+    date birthdate
+    text gender
+    text photo_url
+    timestamptz created_at
+  }
+
+  chat_messages {
+    uuid id PK
+    uuid child_id FK
+    text role
+    text content
+    timestamptz created_at
+  }
+
+  feeding_logs {
+    uuid id PK
+    uuid child_id FK
+    timestamptz fed_at
+    integer amount_ml
+    text type
+    text memo
+    timestamptz created_at
+  }
+
+  sleep_logs {
+    uuid id PK
+    uuid child_id FK
+    timestamptz started_at
+    timestamptz ended_at
+    integer duration_minutes
+    text memo
+    timestamptz created_at
+  }
+
+  diaper_logs {
+    uuid id PK
+    uuid child_id FK
+    timestamptz changed_at
+    text type
+    text memo
+    timestamptz created_at
+  }
+
+  health_logs {
+    uuid id PK
+    uuid child_id FK
+    timestamptz recorded_at
+    text type
+    text title
+    text value
+    text memo
+    timestamptz created_at
+  }
+
+  auth_users ||--o{ children        : "has"
+  children   ||--o{ chat_messages   : "has"
+  children   ||--o{ feeding_logs    : "has"
+  children   ||--o{ sleep_logs      : "has"
+  children   ||--o{ diaper_logs     : "has"
+  children   ||--o{ health_logs     : "has"
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-card">
+      <h3><span class="dot" style="background:#f59e0b"></span>auth.users <span style="color:#64748b;font-weight:400">(Supabase Auth)</span></h3>
+      <ul>
+        <li><span class="pk">PK</span> id · uuid</li>
+        <li>email · text</li>
+        <li>created_at · timestamptz</li>
+      </ul>
+    </div>
+    <div class="legend-card">
+      <h3><span class="dot" style="background:#3b82f6"></span>children</h3>
+      <ul>
+        <li><span class="pk">PK</span> id · uuid</li>
+        <li><span class="fk">FK</span> user_id → auth.users</li>
+        <li>name · text <span class="chk">NOT NULL</span></li>
+        <li>birthdate · date</li>
+        <li>gender · text <span class="chk">male|female</span></li>
+        <li>photo_url · text</li>
+      </ul>
+    </div>
+    <div class="legend-card">
+      <h3><span class="dot" style="background:#8b5cf6"></span>chat_messages</h3>
+      <ul>
+        <li><span class="pk">PK</span> id · uuid</li>
+        <li><span class="fk">FK</span> child_id → children</li>
+        <li>role · text <span class="chk">user|assistant</span></li>
+        <li>content · text</li>
+      </ul>
+    </div>
+    <div class="legend-card">
+      <h3><span class="dot" style="background:#10b981"></span>feeding_logs</h3>
+      <ul>
+        <li><span class="pk">PK</span> id · uuid</li>
+        <li><span class="fk">FK</span> child_id → children</li>
+        <li>fed_at · timestamptz</li>
+        <li>amount_ml · integer</li>
+        <li>type · text <span class="chk">breast|formula|mixed|solid</span></li>
+        <li>memo · text</li>
+      </ul>
+    </div>
+    <div class="legend-card">
+      <h3><span class="dot" style="background:#f97316"></span>sleep_logs</h3>
+      <ul>
+        <li><span class="pk">PK</span> id · uuid</li>
+        <li><span class="fk">FK</span> child_id → children</li>
+        <li>started_at · timestamptz</li>
+        <li>ended_at · timestamptz</li>
+        <li><span class="gen">GEN</span> duration_minutes <span class="chk">STORED</span></li>
+        <li>memo · text</li>
+      </ul>
+    </div>
+    <div class="legend-card">
+      <h3><span class="dot" style="background:#ec4899"></span>diaper_logs</h3>
+      <ul>
+        <li><span class="pk">PK</span> id · uuid</li>
+        <li><span class="fk">FK</span> child_id → children</li>
+        <li>changed_at · timestamptz</li>
+        <li>type · text <span class="chk">wet|dirty|both|dry</span></li>
+        <li>memo · text</li>
+      </ul>
+    </div>
+    <div class="legend-card">
+      <h3><span class="dot" style="background:#ef4444"></span>health_logs</h3>
+      <ul>
+        <li><span class="pk">PK</span> id · uuid</li>
+        <li><span class="fk">FK</span> child_id → children</li>
+        <li>recorded_at · timestamptz</li>
+        <li>type · text <span class="chk">medication|temperature|hospital|symptom</span></li>
+        <li>title · text</li>
+        <li>value · text</li>
+        <li>memo · text</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        primaryColor: '#1e40af',
+        primaryTextColor: '#e2e8f0',
+        primaryBorderColor: '#3b82f6',
+        lineColor: '#64748b',
+        secondaryColor: '#1e293b',
+        tertiaryColor: '#0f172a',
+        background: '#1e293b',
+        mainBkg: '#1e293b',
+        nodeBorder: '#334155',
+        clusterBkg: '#1e293b',
+        titleColor: '#f1f5f9',
+        edgeLabelBackground: '#1e293b',
+        attributeBackgroundColorEven: '#1e293b',
+        attributeBackgroundColorOdd: '#162032',
+      },
+      er: {
+        diagramPadding: 40,
+        layoutDirection: 'TB',
+        minEntityWidth: 100,
+        minEntityHeight: 75,
+        entityPadding: 15,
+        useMaxWidth: true,
+      }
+    });
+  </script>
+</body>
+</html>

@@ -3,6 +3,7 @@ const OLLAMA_API_URL = `${OLLAMA_BASE_URL}/api/chat`;
 const MODEL = process.env.EXPO_PUBLIC_OLLAMA_MODEL || 'gemma3n:e2b';
 const DEFAULT_NUM_PREDICT = 700;
 const DEFAULT_TEMPERATURE = 0.4;
+const DEFAULT_REQUEST_TIMEOUT_MS = 300000;
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -17,6 +18,10 @@ const OLLAMA_OPTIONS = {
   ),
   temperature: DEFAULT_TEMPERATURE,
 };
+const OLLAMA_REQUEST_TIMEOUT_MS = parsePositiveInt(
+  process.env.EXPO_PUBLIC_OLLAMA_TIMEOUT_MS,
+  DEFAULT_REQUEST_TIMEOUT_MS
+);
 
 function formatOllamaError(status: number, errorText: string): string {
   const modelHint =
@@ -111,6 +116,7 @@ function callLLMStreamWithXHR(
 
     xhr.open('POST', OLLAMA_API_URL, true);
     xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = OLLAMA_REQUEST_TIMEOUT_MS;
     xhr.onreadystatechange = () => {
       if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED && xhr.status >= 400 && !settled) {
         settled = true;
@@ -152,7 +158,13 @@ function callLLMStreamWithXHR(
     xhr.ontimeout = () => {
       if (settled) return;
       settled = true;
-      reject(new Error('Ollama 스트리밍 요청 시간이 초과되었습니다.'));
+      reject(
+        new Error(
+          `Ollama 스트리밍 요청 시간이 초과되었습니다. 현재 제한은 ${Math.round(
+            OLLAMA_REQUEST_TIMEOUT_MS / 1000
+          )}초입니다. EXPO_PUBLIC_OLLAMA_TIMEOUT_MS 값을 늘리거나, 더 빠른 모델/더 작은 EXPO_PUBLIC_OLLAMA_NUM_PREDICT 값을 사용해주세요.`
+        )
+      );
     };
     xhr.send(requestBody);
   });

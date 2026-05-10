@@ -1444,7 +1444,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.white,
   },
   calendarDays: {
     flexDirection: 'row',
