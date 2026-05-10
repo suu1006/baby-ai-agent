@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -29,6 +30,47 @@ type Message = {
   created_at: string;
 };
 
+type ConvPair = { question: Message; answer?: Message };
+type DateGroup = { dateKey: string; label: string; pairs: ConvPair[] };
+
+const KO_DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+function groupHistoryByDate(messages: Message[]): DateGroup[] {
+  const groupMap = new Map<string, ConvPair[]>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role !== 'user') continue;
+
+    const d = new Date(msg.created_at);
+    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const answer = i + 1 < messages.length && messages[i + 1].role === 'assistant'
+      ? messages[i + 1] : undefined;
+
+    if (!groupMap.has(dateKey)) groupMap.set(dateKey, []);
+    groupMap.get(dateKey)!.push({ question: msg, answer });
+  }
+
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  return Array.from(groupMap.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([dateKey, pairs]) => {
+      const [year, month, day] = dateKey.split('-').map(Number);
+      const d = new Date(year, month - 1, day);
+      const isToday = d.toDateString() === today.toDateString();
+      const isYesterday = d.toDateString() === yesterday.toDateString();
+      const label = isToday
+        ? `오늘 · ${month}월 ${day}일 (${KO_DAYS[d.getDay()]})`
+        : isYesterday
+        ? `어제 · ${month}월 ${day}일 (${KO_DAYS[d.getDay()]})`
+        : `${month}월 ${day}일 (${KO_DAYS[d.getDay()]})`;
+      return { dateKey, label, pairs };
+    });
+}
+
 const QUICK_QUESTIONS = [
   '이 나이에 잘 자지 않으면 어떡하나요?',
   '이유식은 언제부터 시작하나요?',
@@ -36,16 +78,26 @@ const QUICK_QUESTIONS = [
   '언제쯤 걸을 수 있나요?',
 ];
 
-const MIN_PENDING_STATUS_MS = 1500;
-const PENDING_STATUS_FADE_MS = 220;
+const MIN_PENDING_STATUS_MS = 3000;
+const PENDING_STATUS_FADE_MS = 300;
 const COMPOSING_STATUS = '답변을 작성하고 있어요...';
-const COMPOSING_STATUS_INTERVAL_MS = 1800;
+const COMPOSING_STATUS_INTERVAL_MS = 3500;
 const COMPOSING_STATUS_MESSAGES = [
   '아이에게 맞는 답변으로 다듬고 있어요...',
   '중요한 내용을 간단히 정리하고 있어요...',
   '곧 답변을 보여드릴게요...',
   COMPOSING_STATUS,
 ];
+
+function getStatusIcon(status: string): React.ComponentProps<typeof Ionicons>['name'] {
+  if (status.includes('살펴')) return 'search-outline';
+  if (status.includes('준비')) return 'time-outline';
+  if (status.includes('작성')) return 'create-outline';
+  if (status.includes('다듬')) return 'heart-outline';
+  if (status.includes('정리')) return 'list-outline';
+  if (status.includes('곧')) return 'sparkles';
+  return 'ellipsis-horizontal-outline';
+}
 
 function formatAssistantMessage(raw: string): string {
   return raw
@@ -76,8 +128,11 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [assistantStatusText, setAssistantStatusText] = useState('답변을 준비하고 있어요...');
+  const [displayedStatusText, setDisplayedStatusText] = useState('');
   const statusOpacityRef = useRef(new Animated.Value(1));
+  const statusTypewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const lastInjectedQuestionRef = useRef<string | null>(null);
   const typewriterTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -106,9 +161,19 @@ export default function ChatScreen() {
     setHistoryLoading(false);
   };
 
-  const openHistory = () => {
+  const openHistory = async () => {
     setHistoryVisible(true);
-    loadChatHistory();
+    setExpandedDates(new Set());
+    await loadChatHistory();
+  };
+
+  const toggleDate = (dateKey: string) => {
+    setExpandedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(dateKey)) next.delete(dateKey);
+      else next.add(dateKey);
+      return next;
+    });
   };
 
   const saveMessage = async (role: 'user' | 'assistant', content: string) => {
@@ -131,6 +196,26 @@ export default function ChatScreen() {
     typewriterResolversRef.current = [];
   };
 
+  const stopStatusTypewriter = () => {
+    if (statusTypewriterRef.current) {
+      clearInterval(statusTypewriterRef.current);
+      statusTypewriterRef.current = null;
+    }
+  };
+
+  const startStatusTypewriter = (text: string) => {
+    stopStatusTypewriter();
+    setDisplayedStatusText('');
+    let index = 0;
+    statusTypewriterRef.current = setInterval(() => {
+      index++;
+      setDisplayedStatusText(text.slice(0, index));
+      if (index >= text.length) {
+        stopStatusTypewriter();
+      }
+    }, 100);
+  };
+
   const scheduleNextAssistantStatus = () => {
     if (statusTimerRef.current || isStatusTransitioningRef.current) return;
     if (statusQueueRef.current.length === 0) return;
@@ -151,6 +236,7 @@ export default function ChatScreen() {
       }).start(() => {
         currentStatusRef.current = nextStatus;
         setAssistantStatusText(nextStatus);
+        startStatusTypewriter(nextStatus);
         lastStatusAtRef.current = Date.now();
 
         Animated.timing(statusOpacityRef.current, {
@@ -195,6 +281,7 @@ export default function ChatScreen() {
     setInputText('');
     stopTypewriter();
     clearPendingStatusQueue();
+    stopStatusTypewriter();
     streamedTextRef.current = '';
   }, [activeChild?.id]);
 
@@ -215,12 +302,14 @@ export default function ChatScreen() {
 
   const resetAssistantStatus = (status: string) => {
     clearPendingStatusQueue();
+    stopStatusTypewriter();
     statusOpacityRef.current.stopAnimation();
     statusOpacityRef.current.setValue(1);
     isStatusTransitioningRef.current = false;
     currentStatusRef.current = status;
     lastStatusAtRef.current = Date.now();
     setAssistantStatusText(status);
+    startStatusTypewriter(status);
   };
 
   const startComposingStatusLoop = () => {
@@ -244,6 +333,7 @@ export default function ChatScreen() {
   useEffect(() => () => {
     stopTypewriter();
     clearPendingStatusQueue();
+    stopStatusTypewriter();
   }, []);
 
   const resolveTypewriterIfIdle = () => {
@@ -398,7 +488,7 @@ export default function ChatScreen() {
     const isUser = item.role === 'user';
     const isPendingAssistant = !isUser && !item.content.trim();
     const displayContent = isPendingAssistant
-      ? assistantStatusText
+      ? displayedStatusText
       : item.content;
 
     return (
@@ -416,22 +506,23 @@ export default function ChatScreen() {
         >
           <View style={styles.messageContentRow}>
             {isPendingAssistant && (
-              <ActivityIndicator
-                size="small"
-                color={Colors.primary}
-                style={styles.pendingIndicator}
-              />
+              <Animated.View style={[styles.pendingIndicator, { opacity: statusOpacityRef.current }]}>
+                <Ionicons
+                  name={getStatusIcon(assistantStatusText)}
+                  size={16}
+                  color={Colors.primary}
+                />
+              </Animated.View>
             )}
-            <Animated.Text
+            <Text
               style={[
                 styles.bubbleText,
                 isUser && styles.userBubbleText,
                 isPendingAssistant && styles.pendingText,
-                isPendingAssistant && { opacity: statusOpacityRef.current },
               ]}
             >
               {displayContent}
-            </Animated.Text>
+            </Text>
           </View>
           <Text style={[styles.timeText, isUser && styles.userTimeText]}>
             {new Date(item.created_at).toLocaleTimeString('ko-KR', {
@@ -440,29 +531,6 @@ export default function ChatScreen() {
             })}
           </Text>
         </View>
-      </View>
-    );
-  };
-
-  const renderHistoryMessage = ({ item }: { item: Message }) => {
-    const isUser = item.role === 'user';
-
-    return (
-      <View style={[styles.historyItem, isUser ? styles.historyUserItem : styles.historyAssistantItem]}>
-        <View style={styles.historyItemHeader}>
-          <Text style={[styles.historyRole, isUser && styles.historyUserRole]}>
-            {isUser ? '나' : 'AI'}
-          </Text>
-          <Text style={styles.historyTime}>
-            {new Date(item.created_at).toLocaleString('ko-KR', {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </Text>
-        </View>
-        <Text style={styles.historyContent}>{item.content}</Text>
       </View>
     );
   };
@@ -586,22 +654,68 @@ export default function ChatScreen() {
               <ActivityIndicator size="small" color={Colors.primary} />
               <Text style={styles.historyLoadingText}>히스토리를 불러오고 있어요...</Text>
             </View>
+          ) : historyMessages.length === 0 ? (
+            <View style={styles.historyEmpty}>
+              <Ionicons name="chatbubble-ellipses-outline" size={34} color={Colors.textLight} />
+              <Text style={styles.historyEmptyTitle}>아직 저장된 대화가 없어요</Text>
+              <Text style={styles.historyEmptyText}>새 채팅에서 질문하면 이곳에 기록됩니다.</Text>
+            </View>
           ) : (
-            <FlatList
-              data={historyMessages}
-              keyExtractor={(item) => item.id}
-              renderItem={renderHistoryMessage}
-              contentContainerStyle={styles.historyList}
-              ListEmptyComponent={
-                <View style={styles.historyEmpty}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={34} color={Colors.textLight} />
-                  <Text style={styles.historyEmptyTitle}>아직 저장된 대화가 없어요</Text>
-                  <Text style={styles.historyEmptyText}>
-                    새 채팅에서 질문하면 이곳에 기록됩니다.
-                  </Text>
-                </View>
-              }
-            />
+            <ScrollView contentContainerStyle={styles.historyList}>
+              {groupHistoryByDate(historyMessages).map((group) => {
+                const isExpanded = expandedDates.has(group.dateKey);
+                return (
+                  <View key={group.dateKey} style={styles.dateGroup}>
+                    <TouchableOpacity
+                      style={styles.dateGroupHeader}
+                      onPress={() => toggleDate(group.dateKey)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={styles.dateGroupLeft}>
+                        <Ionicons name="calendar-outline" size={15} color={Colors.primary} />
+                        <Text style={styles.dateGroupLabel}>{group.label}</Text>
+                        <View style={styles.dateGroupBadge}>
+                          <Text style={styles.dateGroupCount}>{group.pairs.length}개</Text>
+                        </View>
+                      </View>
+                      <Ionicons
+                        name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                        size={16}
+                        color={Colors.textSecondary}
+                      />
+                    </TouchableOpacity>
+
+                    {isExpanded && (
+                      <View style={styles.dateGroupBody}>
+                        {group.pairs.map(({ question, answer }) => (
+                          <View key={question.id} style={styles.convPair}>
+                            <View style={styles.convQuestion}>
+                              <Ionicons name="person-circle" size={16} color={Colors.primary} />
+                              <View style={styles.convQuestionContent}>
+                                <Text style={styles.convQuestionText}>{question.content}</Text>
+                                <Text style={styles.convTime}>
+                                  {new Date(question.created_at).toLocaleTimeString('ko-KR', {
+                                    hour: '2-digit', minute: '2-digit',
+                                  })}
+                                </Text>
+                              </View>
+                            </View>
+                            {answer && (
+                              <View style={styles.convAnswer}>
+                                <Ionicons name="sparkles" size={14} color={Colors.primary} style={styles.convAnswerIcon} />
+                                <Text style={styles.convAnswerText} numberOfLines={3}>
+                                  {answer.content}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
           )}
         </SafeAreaView>
       </Modal>
@@ -697,7 +811,9 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   pendingIndicator: {
-    marginRight: Spacing.sm,
+    marginRight: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pendingText: {
     color: Colors.textSecondary,
@@ -834,45 +950,6 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     paddingBottom: Spacing.xl,
   },
-  historyItem: {
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-  },
-  historyUserItem: {
-    borderColor: Colors.primaryLight,
-    backgroundColor: Colors.primaryLight,
-  },
-  historyAssistantItem: {
-    backgroundColor: Colors.surface,
-  },
-  historyItemHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.xs,
-    gap: Spacing.sm,
-  },
-  historyRole: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: Colors.primary,
-  },
-  historyUserRole: {
-    color: Colors.text,
-  },
-  historyTime: {
-    fontSize: 11,
-    color: Colors.textLight,
-  },
-  historyContent: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: Colors.text,
-  },
   historyLoading: {
     flex: 1,
     alignItems: 'center',
@@ -900,5 +977,93 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  dateGroup: {
+    marginBottom: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+  },
+  dateGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 14,
+    backgroundColor: Colors.surface,
+  },
+  dateGroupLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dateGroupLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  dateGroupBadge: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  dateGroupCount: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  dateGroupBody: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.background,
+    gap: Spacing.sm,
+  },
+  convPair: {
+    gap: 6,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  convQuestion: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  convQuestionContent: {
+    flex: 1,
+    gap: 2,
+  },
+  convQuestionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    lineHeight: 20,
+  },
+  convTime: {
+    fontSize: 11,
+    color: Colors.textLight,
+  },
+  convAnswer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginLeft: 24,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: Radius.sm,
+    padding: Spacing.sm,
+  },
+  convAnswerIcon: {
+    marginTop: 2,
+  },
+  convAnswerText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 19,
   },
 });

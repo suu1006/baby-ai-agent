@@ -32,6 +32,7 @@ type LogTab = OverviewLogTab | PrimaryLogTab | HealthLogType;
 type DateTimeTarget = 'feed' | 'sleepStart' | 'sleepEnd' | 'diaper' | 'health';
 type DateTimePickerMode = 'date' | 'time';
 type FeedingType = 'breast' | 'formula' | 'mixed' | 'solid';
+type LogTableName = 'feeding_logs' | 'sleep_logs' | 'diaper_logs' | 'health_logs';
 
 type FeedingLog = { id: string; fed_at: string; amount_ml: number | null; type: string };
 type SleepLog = { id: string; started_at: string; ended_at: string | null; duration_minutes: number | null };
@@ -726,6 +727,54 @@ export default function LogsScreen() {
     loadLogs();
   };
 
+  const handleDeleteLog = (tableName: LogTableName, id: string, label: string) => {
+    Alert.alert(`${label} 삭제`, '이 기록을 삭제할까요?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await supabase
+            .from(tableName)
+            .delete()
+            .eq('id', id);
+
+          if (error) {
+            console.error('[LogDelete] 삭제 실패:', tableName, error.code, error.message, error.details);
+            Alert.alert('삭제 실패', `${error.message}\n\n코드: ${error.code}`);
+            return;
+          }
+
+          closeLogModal();
+          loadLogs();
+        },
+      },
+    ]);
+  };
+
+  const renderModalHeader = (
+    title: string,
+    deleteConfig?: { tableName: LogTableName; id: string; label: string }
+  ) => (
+    <View style={styles.modalHeader}>
+      <View style={styles.modalHeaderSide} />
+      <Text style={styles.modalTitle}>{title}</Text>
+      <View style={styles.modalHeaderSide}>
+        {deleteConfig ? (
+          <TouchableOpacity
+            style={styles.modalDeleteButton}
+            onPress={() =>
+              handleDeleteLog(deleteConfig.tableName, deleteConfig.id, deleteConfig.label)
+            }
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="trash-outline" size={21} color={Colors.error} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </View>
+  );
+
   const renderDateTimeField = (
     label: string,
     value: Date | null,
@@ -971,7 +1020,7 @@ export default function LogsScreen() {
               </View>
             )}
             <TouchableOpacity
-              style={styles.logCard}
+              style={[styles.logCard, { backgroundColor: item.backgroundColor }]}
               activeOpacity={0.85}
               onPress={() => {
                 if (item.tab === 'feeding') openFeedingEditor(item.log);
@@ -1009,7 +1058,7 @@ export default function LogsScreen() {
               </View>
             )}
             <TouchableOpacity
-              style={styles.logCard}
+              style={[styles.logCard, { backgroundColor: '#EBF3FB' }]}
               activeOpacity={0.85}
               onPress={() => openFeedingEditor(log)}
             >
@@ -1035,7 +1084,7 @@ export default function LogsScreen() {
               </View>
             )}
             <TouchableOpacity
-              style={styles.logCard}
+              style={[styles.logCard, { backgroundColor: '#EDE7F6' }]}
               activeOpacity={0.85}
               onPress={() => openSleepEditor(log)}
             >
@@ -1070,7 +1119,7 @@ export default function LogsScreen() {
               </View>
             )}
             <TouchableOpacity
-              style={styles.logCard}
+              style={[styles.logCard, { backgroundColor: '#FFF8E1' }]}
               activeOpacity={0.85}
               onPress={() => openDiaperEditor(log)}
             >
@@ -1098,7 +1147,7 @@ export default function LogsScreen() {
                 </View>
               )}
               <TouchableOpacity
-                style={styles.logCard}
+                style={[styles.logCard, { backgroundColor: config.backgroundColor }]}
                 activeOpacity={0.85}
                 onPress={() => openHealthEditor(log)}
               >
@@ -1139,9 +1188,12 @@ export default function LogsScreen() {
 
       {/* ─── 수유 모달 ─── */}
       <LogSheetModal visible={modalType === 'feeding'} onClose={closeLogModal} numericAccessory>
-        <Text style={styles.modalTitle}>
-          {editingFeedingLog ? '수유 기록 수정' : '수유 기록'}
-        </Text>
+        {renderModalHeader(
+          editingFeedingLog ? '수유 기록 수정' : '수유 기록',
+          editingFeedingLog
+            ? { tableName: 'feeding_logs', id: editingFeedingLog.id, label: '수유 기록' }
+            : undefined
+        )}
         {renderDateTimeField('날짜/시간', feedDateTime, 'feed', '선택하지 않으면 현재 시각으로 저장돼요')}
         <Text style={styles.modalLabel}>유형</Text>
         <View style={styles.optionRow}>
@@ -1193,9 +1245,12 @@ export default function LogsScreen() {
           setModalType(null);
         }}
       >
-        <Text style={styles.modalTitle}>
-          {editingSleepLog ? '수면 기록 수정' : '수면 기록'}
-        </Text>
+        {renderModalHeader(
+          editingSleepLog ? '수면 기록 수정' : '수면 기록',
+          editingSleepLog
+            ? { tableName: 'sleep_logs', id: editingSleepLog.id, label: '수면 기록' }
+            : undefined
+        )}
         {renderDateTimeField('시작 날짜/시간', sleepStart, 'sleepStart', '선택하지 않으면 현재 시각으로 시작돼요')}
         <TouchableOpacity
           style={styles.checkboxRow}
@@ -1239,9 +1294,12 @@ export default function LogsScreen() {
           setModalType(null);
         }}
       >
-        <Text style={styles.modalTitle}>
-          {editingDiaperLog ? '기저귀 기록 수정' : '기저귀 교체 기록'}
-        </Text>
+        {renderModalHeader(
+          editingDiaperLog ? '기저귀 기록 수정' : '기저귀 교체 기록',
+          editingDiaperLog
+            ? { tableName: 'diaper_logs', id: editingDiaperLog.id, label: '기저귀 기록' }
+            : undefined
+        )}
         {renderDateTimeField('날짜/시간', diaperDateTime, 'diaper', '선택하지 않으면 현재 시각으로 저장돼요')}
         <Text style={styles.modalLabel}>유형</Text>
         <View style={styles.optionRow}>
@@ -1284,11 +1342,14 @@ export default function LogsScreen() {
         onClose={closeLogModal}
         numericAccessory={modalType === 'temperature'}
       >
-        <Text style={styles.modalTitle}>
-          {editingHealthLog
+        {renderModalHeader(
+          editingHealthLog
             ? `${modalHealthConfig?.label ?? '건강'} 기록 수정`
-            : `${modalHealthConfig?.label ?? '건강'} 기록`}
-        </Text>
+            : `${modalHealthConfig?.label ?? '건강'} 기록`,
+          editingHealthLog
+            ? { tableName: 'health_logs', id: editingHealthLog.id, label: `${modalHealthConfig?.label ?? '건강'} 기록` }
+            : undefined
+        )}
         {renderDateTimeField('날짜/시간', healthDateTime, 'health', '선택하지 않으면 현재 시각으로 저장돼요')}
         <Text style={styles.modalLabel}>{modalHealthConfig?.titleLabel}</Text>
         <TextInput
@@ -1349,7 +1410,7 @@ export default function LogsScreen() {
 // ─── 스타일 ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
+  safe: { flex: 1, backgroundColor: Colors.white },
   header: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
@@ -1359,9 +1420,10 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
   calendarCard: {
     marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
     padding: Spacing.sm,
-    backgroundColor: Colors.surface,
+    backgroundColor: '#F4F4F6',
     borderRadius: Radius.lg,
     ...Shadows.sm,
   },
@@ -1473,7 +1535,6 @@ const styles = StyleSheet.create({
   logCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
     borderRadius: Radius.md,
     padding: Spacing.md,
     marginBottom: Spacing.sm,
@@ -1597,10 +1658,30 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   modalTitle: {
+    flex: 1,
     fontSize: 18,
     fontWeight: '700',
     color: Colors.text,
+    textAlign: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: Spacing.md,
+  },
+  modalHeaderSide: {
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalDeleteButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FDEEEB',
   },
   modalLabel: {
     fontSize: 13,

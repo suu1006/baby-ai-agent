@@ -421,13 +421,13 @@ function isCurrentCountQuery(userQuery: string): boolean {
   const currentWords = ['지금', '현재', '오늘'];
   const countWords = ['몇 번', '몇번', '몇 회', '몇회', '횟수', '몇'];
   return (
-    currentWords.some((kw) => userQuery.includes(kw)) ||
+    currentWords.some((kw) => userQuery.includes(kw)) &&
     countWords.some((kw) => userQuery.includes(kw))
   );
 }
 
 function isMultiDayQuery(userQuery: string): boolean {
-  const multiDayWords = ['최근', '지난', '요즘', '이번 주', '이번주', '평균', '일주일', '7일'];
+  const multiDayWords = ['최근', '지난', '요즘', '이번 주', '이번주', '평균', '일주일', '7일', '이전', '저번', '며칠', '지금까지', '전체', '모두'];
   return multiDayWords.some((kw) => userQuery.includes(kw));
 }
 
@@ -438,7 +438,7 @@ function getDataWindow(userQuery: string): { label: string; days: number; since?
   if (!isMultiDayQuery(userQuery) && isCurrentCountQuery(userQuery)) {
     return { label: '오늘', days: 1, since: getTodayStart() };
   }
-  return { label: '최근 7일', days: 7 };
+  return { label: '최근 14일', days: 14 };
 }
 
 function formatDataContext(
