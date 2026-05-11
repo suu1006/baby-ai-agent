@@ -49,6 +49,35 @@ EXPO_PUBLIC_OLLAMA_NUM_PREDICT=700
 
 Expo Go를 실기기에서 실행할 때는 `localhost`가 맥이 아니라 휴대폰 자신을 가리킵니다. 맥의 LAN IP를 사용하세요. 응답이 자주 타임아웃되면 `EXPO_PUBLIC_OLLAMA_TIMEOUT_MS`를 늘리거나 `EXPO_PUBLIC_OLLAMA_NUM_PREDICT`를 줄이면 됩니다.
 
+### 3-1. OpenRouter 서버 에이전트 설정
+
+채팅 기능은 Supabase Edge Function `agent-chat`을 기본 AI 진입점으로 사용합니다. 이 함수는 서버에서 OpenRouter tool calling을 실행하고, 필요한 경우 Supabase 육아 기록과 Tavily 검색 도구를 호출한 뒤 최종 답변을 앱으로 스트리밍합니다.
+
+Supabase Edge Function secrets:
+
+```bash
+supabase secrets set OPENROUTER_API_KEY=<openrouter-api-key>
+supabase secrets set TAVILY_API_KEY=<tavily-api-key>
+supabase secrets set OPENROUTER_MODEL=openai/gpt-oss-120b
+supabase secrets set OPENROUTER_REASONING_EFFORT=low
+supabase secrets set OPENROUTER_MAX_TOKENS=2048
+supabase secrets set OPENROUTER_REFERER=https://baby-ai-agent-suu1006s-projects.vercel.app
+supabase secrets set OPENROUTER_TITLE=Bebimom
+```
+
+Deploy:
+
+```bash
+supabase functions deploy agent-chat
+```
+
+The mobile app still needs:
+
+```bash
+EXPO_PUBLIC_SUPABASE_URL=<your-supabase-url>
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-key>
+```
+
 ### 4. 개발 서버 실행
 
 ```bash
