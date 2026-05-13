@@ -249,7 +249,7 @@ export function createAgentChatHandler(deps: HandlerDeps) {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
-    if (!deps.env.OPENROUTER_API_KEY || !deps.env.TAVILY_API_KEY) {
+    if (!deps.env.OPENROUTER_API_KEY) {
       return jsonResponse({ error: 'Server configuration error' }, 500);
     }
 

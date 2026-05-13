@@ -50,10 +50,10 @@ Deno.test('handler returns 401 without Authorization header', async () => {
   assertEquals(response.status, 401);
 });
 
-Deno.test('handler returns 500 when server secrets are missing', async () => {
+Deno.test('handler returns 500 when OpenRouter secret is missing', async () => {
   const handler = createAgentChatHandler({
     createSupabaseClient: () => createSupabaseStub({ user: { id: 'user-1' } }) as never,
-    env: { ...createEnv(), TAVILY_API_KEY: undefined },
+    env: { ...createEnv(), OPENROUTER_API_KEY: '' },
     fetchImpl: fetch,
   });
 
@@ -65,6 +65,28 @@ Deno.test('handler returns 500 when server secrets are missing', async () => {
 
   assertEquals(response.status, 500);
   assertEquals(await response.json(), { error: 'Server configuration error' });
+});
+
+Deno.test('handler does not require Tavily secret for non-web answers', async () => {
+  const handler = createAgentChatHandler({
+    createSupabaseClient: () => createSupabaseStub({
+      user: { id: 'user-1' },
+      child: { id: 'child-1', user_id: 'user-1', name: '하린', birthdate: '2025-01-15' },
+    }) as never,
+    env: { ...createEnv(), TAVILY_API_KEY: undefined },
+    fetchImpl: async () => new Response(JSON.stringify({
+      choices: [{ message: { content: '서버 답변입니다.' } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+  });
+
+  const response = await handler(new Request('https://example.com/agent-chat', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ childId: 'child-1', messages: [{ role: 'user', content: '안녕' }], stream: false }),
+  }));
+
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), { content: '서버 답변입니다.' });
 });
 
 Deno.test('handler returns 403 when child belongs to another user', async () => {

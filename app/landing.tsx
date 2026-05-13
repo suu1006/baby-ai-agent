@@ -83,7 +83,7 @@ export default function LandingScreen() {
 
         <View style={[styles.hero, isWide && styles.heroWide]}>
           <View style={[styles.heroCopy, isWide && styles.heroCopyWide]}>
-            <Text style={styles.kicker}>Gemma 3n E2B 기반 육아 코치</Text>
+            <Text style={styles.kicker}>서버툴 기반 육아 코치</Text>
             <Text style={styles.title}>베비맘</Text>
             <Text style={styles.subtitle}>
               아이의 하루 기록을 모으고, 지금 필요한 육아 질문에 바로 답하는

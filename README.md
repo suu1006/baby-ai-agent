@@ -1,10 +1,10 @@
 # 육아 AI 에이전트 앱
 
-Ollama Gemma 3n E2B 기반 육아 전문 AI 어시스턴트 모바일 앱 (React Native + Expo)
+OpenRouter 서버툴 기반 육아 전문 AI 어시스턴트 모바일 앱 (React Native + Expo)
 
 ## 주요 기능
 
-- **AI 육아 상담**: Ollama Gemma 3n E2B를 활용한 아이 맞춤 육아 Q&A
+- **AI 육아 상담**: OpenRouter tool calling과 Supabase 서버 도구를 활용한 아이 맞춤 육아 Q&A
 - **육아 일기**: 기분, 사진, 마일스톤 포함 일별 기록
 - **성장 기록**: 키/몸무게 트래킹 및 차트 시각화
 - **홈 대시보드**: 오늘의 기록 요약 및 빠른 접근
@@ -14,7 +14,7 @@ Ollama Gemma 3n E2B 기반 육아 전문 AI 어시스턴트 모바일 앱 (React
 - React Native + Expo (SDK 54)
 - Expo Router (파일 기반 네비게이션)
 - Supabase (인증, DB, 스토리지)
-- Ollama Gemma 3n E2B (AI 엔진)
+- OpenRouter + Supabase Edge Functions (AI 엔진/서버 도구)
 - Zustand (상태 관리)
 
 ## 시작하기
@@ -31,25 +31,7 @@ Ollama Gemma 3n E2B 기반 육아 전문 AI 어시스턴트 모바일 앱 (React
 npm install
 ```
 
-### 3. Ollama 설정
-
-Ollama를 실행하고 앱에서 접근 가능한 주소를 `.env.local`에 설정하세요.
-
-```bash
-ollama pull gemma3n:e2b
-ollama serve
-```
-
-```bash
-EXPO_PUBLIC_OLLAMA_URL=http://<맥의-LAN-IP>:11434
-EXPO_PUBLIC_OLLAMA_MODEL=gemma3n:e2b
-EXPO_PUBLIC_OLLAMA_TIMEOUT_MS=300000
-EXPO_PUBLIC_OLLAMA_NUM_PREDICT=700
-```
-
-Expo Go를 실기기에서 실행할 때는 `localhost`가 맥이 아니라 휴대폰 자신을 가리킵니다. 맥의 LAN IP를 사용하세요. 응답이 자주 타임아웃되면 `EXPO_PUBLIC_OLLAMA_TIMEOUT_MS`를 늘리거나 `EXPO_PUBLIC_OLLAMA_NUM_PREDICT`를 줄이면 됩니다.
-
-### 3-1. OpenRouter 서버 에이전트 설정
+### 3. OpenRouter 서버 에이전트 설정
 
 채팅 기능은 Supabase Edge Function `agent-chat`을 기본 AI 진입점으로 사용합니다. 이 함수는 서버에서 OpenRouter tool calling을 실행하고, 필요한 경우 Supabase 육아 기록과 Tavily 검색 도구를 호출한 뒤 최종 답변을 앱으로 스트리밍합니다.
 
@@ -145,7 +127,7 @@ app/
 ├── diary/           # 일기 상세/작성
 └── onboarding.tsx   # 아이 정보 등록
 components/
-lib/                 # supabase.ts, claude.ts
+lib/                 # supabase.ts, agent.ts, age.ts
 store/               # Zustand 스토어
 constants/           # 테마
 supabase/migrations/ # DB 스키마

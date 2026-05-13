@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useChildStore } from '../../store/childStore';
-import { calculateAgeInMonths } from '../../lib/claude';
+import { calculateAgeInMonths } from '../../lib/age';
 import { supabase } from '../../lib/supabase';
 import { Colors, Spacing, Shadows, Radius } from '../../constants/theme';
 
