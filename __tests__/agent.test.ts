@@ -86,6 +86,13 @@ describe('runAgent server wrapper', () => {
     const onStatus = jest.fn();
     const onToken = jest.fn();
 
+    if (!global.navigator) {
+      Object.defineProperty(global, 'navigator', {
+        value: {},
+        configurable: true,
+        writable: true,
+      });
+    }
     Object.defineProperty(global.navigator, 'product', {
       value: 'ReactNative',
       configurable: true,
@@ -133,10 +140,12 @@ describe('runAgent server wrapper', () => {
       expect(onToken).toHaveBeenNthCalledWith(2, '이');
     } finally {
       global.XMLHttpRequest = originalXMLHttpRequest;
-      Object.defineProperty(global.navigator, 'product', {
-        value: originalNavigatorProduct,
-        configurable: true,
-      });
+      if (global.navigator) {
+        Object.defineProperty(global.navigator, 'product', {
+          value: originalNavigatorProduct,
+          configurable: true,
+        });
+      }
     }
   });
 
