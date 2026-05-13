@@ -70,8 +70,10 @@ export default function SettingsScreen() {
                 </View>
               )}
               <View style={styles.profileInfo}>
-                <Text style={styles.profileName}>{activeChild.name}</Text>
-                <Text style={styles.profileAge}>{ageText}</Text>
+                <View style={styles.profileNameRow}>
+                  <Text style={styles.profileName}>{activeChild.name}</Text>
+                  <Text style={styles.profileAge}>{ageText}</Text>
+                </View>
                 <Text style={styles.profileGender}>
                   {activeChild.gender === 'male' ? '남자아이' : '여자아이'}
                 </Text>
@@ -212,6 +214,12 @@ const styles = StyleSheet.create({
   },
   profileInfo: {
     gap: 2,
+  },
+  profileNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flexWrap: 'wrap',
   },
   profileName: {
     fontSize: 20,
