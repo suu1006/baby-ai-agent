@@ -44,7 +44,7 @@ export default function SettingsScreen() {
       : `${Math.floor(ageInMonths / 12)}세 ${ageInMonths % 12}개월`;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}

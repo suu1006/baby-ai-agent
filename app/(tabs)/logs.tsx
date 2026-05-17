@@ -29,6 +29,7 @@ type OverviewLogTab = 'all';
 type PrimaryLogTab = 'feeding' | 'sleep' | 'diaper';
 type HealthLogType = 'medication' | 'temperature' | 'hospital' | 'symptom';
 type LogTab = OverviewLogTab | PrimaryLogTab | HealthLogType;
+type AddLogType = PrimaryLogTab | HealthLogType;
 type DateTimeTarget = 'feed' | 'sleepStart' | 'sleepEnd' | 'diaper' | 'health';
 type DateTimePickerMode = 'date' | 'time';
 type FeedingType = 'breast' | 'formula' | 'mixed' | 'solid';
@@ -111,6 +112,8 @@ const HEALTH_TABS = [
     valuePlaceholder: '예: 38도 이상, 밤에 심함',
   },
 ] as const;
+
+const ADD_LOG_OPTIONS = [...PRIMARY_TABS, ...HEALTH_TABS] as const;
 
 function isHealthTab(tab: LogTab | null): tab is HealthLogType {
   return HEALTH_TABS.some((item) => item.key === tab);
@@ -358,6 +361,7 @@ export default function LogsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [modalType, setModalType] = useState<LogTab | null>(null);
+  const [addTypePickerVisible, setAddTypePickerVisible] = useState(false);
   const [dateTimePicker, setDateTimePicker] = useState<{
     target: DateTimeTarget;
     mode: DateTimePickerMode;
@@ -530,6 +534,20 @@ export default function LogsScreen() {
       setHealthDateTime(withCurrentTime(selectedDate));
     }
     setModalType(tab);
+  };
+
+  const handleAddPress = () => {
+    if (activeTab === 'all') {
+      setAddTypePickerVisible(true);
+      return;
+    }
+
+    openAddModal(activeTab);
+  };
+
+  const handleSelectAddType = (tab: AddLogType) => {
+    setAddTypePickerVisible(false);
+    openAddModal(tab);
   };
 
   const openFeedingEditor = (log: FeedingLog) => {
@@ -1180,11 +1198,56 @@ export default function LogsScreen() {
       </ScrollView>
 
       {/* 추가 버튼 */}
-      {activeTab !== 'all' ? (
-        <TouchableOpacity style={styles.fab} onPress={() => openAddModal(activeTab)}>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={handleAddPress}
+        accessibilityRole="button"
+        accessibilityLabel="기록 추가"
+      >
           <Ionicons name="add" size={28} color="#fff" />
-        </TouchableOpacity>
-      ) : null}
+      </TouchableOpacity>
+
+      {/* ─── 전체 탭 추가 유형 선택 모달 ─── */}
+      <Modal
+        visible={addTypePickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddTypePickerVisible(false)}
+      >
+        <Pressable
+          style={styles.addTypeCenterBackdrop}
+          onPress={() => setAddTypePickerVisible(false)}
+        >
+          <Pressable style={styles.addTypeDialog}>
+            <View style={styles.addTypeHeader}>
+              <Text style={styles.addTypeTitle}>어떤 기록을 추가할까요?</Text>
+              <TouchableOpacity
+                style={styles.addTypeCloseButton}
+                onPress={() => setAddTypePickerVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="기록 추가 선택 닫기"
+              >
+                <Ionicons name="close" size={18} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.addTypeGrid}>
+              {ADD_LOG_OPTIONS.map(({ key, label, icon, color, backgroundColor }) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.addTypeOption, { backgroundColor }]}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${label} 기록 추가`}
+                  onPress={() => handleSelectAddType(key)}
+                >
+                  <Ionicons name={icon} size={17} color={color} />
+                  <Text style={[styles.addTypeText, { color }]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* ─── 수유 모달 ─── */}
       <LogSheetModal visible={modalType === 'feeding'} onClose={closeLogModal} numericAccessory>
@@ -1585,6 +1648,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.md,
+  },
+  addTypeCenterBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: MODAL_DIM,
+    paddingHorizontal: Spacing.lg,
+  },
+  addTypeDialog: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: Radius.xl,
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    ...Shadows.md,
+  },
+  addTypeHeader: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  addTypeTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.text,
+    textAlign: 'center',
+    paddingLeft: 32,
+  },
+  addTypeCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+  },
+  addTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  addTypeOption: {
+    minWidth: 82,
+    flexGrow: 1,
+    minHeight: 44,
+    borderRadius: Radius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  addTypeText: {
+    fontSize: 13,
+    fontWeight: '800',
   },
   modalKeyboardRoot: {
     flex: 1,

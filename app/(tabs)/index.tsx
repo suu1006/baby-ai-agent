@@ -336,12 +336,6 @@ export default function HomeScreen() {
     .filter((l) => l.type === 'temperature')
     .sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())[0] ?? null;
 
-  const napEndTime = useMemo(() => {
-    const end = new Date(nextNapTime);
-    end.setMinutes(end.getMinutes() + (ageInMonths < 6 ? 90 : ageInMonths < 12 ? 75 : 60));
-    return end;
-  }, [nextNapTime, ageInMonths]);
-
   const expectedSleepByAge = ageInMonths < 6 ? 14 : ageInMonths < 12 ? 13 : 12;
   const expectedFeedIntervalHours = ageInMonths < 3 ? 2.5 : ageInMonths < 6 ? 3 : ageInMonths < 12 ? 4 : 5;
   const now = new Date();
@@ -423,7 +417,7 @@ export default function HomeScreen() {
           />
         }
       >
-        <View style={styles.profileCard}>
+        <View style={styles.profileHero}>
           <View style={styles.profileHeader}>
             <View style={styles.profileIdentity}>
               {activeChild.photo_url ? (
@@ -442,43 +436,25 @@ export default function HomeScreen() {
                 <Text style={styles.profileMeta}>생후 {ageText}</Text>
               </View>
             </View>
-            <View style={styles.badge}>
-              <Ionicons name="happy" size={14} color={Colors.primary} />
-              <Text style={styles.badgeText}>오늘</Text>
+            <View style={styles.profileActions}>
+              <TouchableOpacity
+                style={styles.profileActionButton}
+                onPress={() => router.push('/(tabs)/logs')}
+                accessibilityLabel="기록 달력 보기"
+              >
+                <Ionicons name="calendar-outline" size={24} color="#8F92A3" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.profileActionButton}
+                onPress={() => router.push('/(tabs)/settings')}
+                accessibilityLabel="설정 열기"
+              >
+                <Ionicons name="settings-outline" size={24} color="#8F92A3" />
+              </TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.quickActionRow}>
-            <TouchableOpacity
-              style={styles.quickAction}
-              onPress={() => router.push('/(tabs)/logs')}
-            >
-              <Ionicons name="water-outline" size={16} color={Colors.secondary} />
-              <Text style={styles.quickActionText}>수유</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickAction}
-              onPress={() => router.push('/(tabs)/logs')}
-            >
-              <Ionicons name="moon-outline" size={16} color="#8F7CE8" />
-              <Text style={styles.quickActionText}>수면</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickAction}
-              onPress={() => router.push('/(tabs)/logs')}
-            >
-              <Ionicons name="refresh-circle-outline" size={16} color={Colors.warning} />
-              <Text style={styles.quickActionText}>기저귀</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickAction}
-              onPress={() => router.push('/(tabs)/chat')}
-            >
-              <Ionicons name="sparkles-outline" size={16} color={Colors.primary} />
-              <Text style={styles.quickActionText}>상담</Text>
-            </TouchableOpacity>
           </View>
-        </View>
 
         {children.length > 1 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.childScroll}>
@@ -508,11 +484,11 @@ export default function HomeScreen() {
           <View style={styles.aiCardHeader}>
             <View style={styles.aiCardTitleRow}>
               <Ionicons name="sparkles" size={20} color="#F6B84B" />
-              <Text style={styles.aiCardTitle}>육아코치 AI</Text>
+              <Text style={styles.aiCardTitle}>베베 AI 코칭</Text>
             </View>
             <TouchableOpacity
               style={styles.aiCardMoreBtn}
-              onPress={() => router.push({ pathname: '/(tabs)/chat', params: { question: `${activeChild.name}의 오늘 수면 패턴을 분석해줘` } })}
+              onPress={() => router.push({ pathname: '/(tabs)/chat', params: { question: '오늘 내 아기의 전체적인 상태를 체크해주고 필요한 부분 조언해줘' } })}
             >
               <Text style={styles.aiCardMoreText}>자세히 보기</Text>
               <Ionicons name="chevron-forward" size={12} color={Colors.textSecondary} />
@@ -520,24 +496,13 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.aiContentBox}>
-            {/* 말풍선 텍스트 */}
-            <View style={styles.aiBubble}>
+            <View style={styles.aiTextBox}>
               <InsightText text={insight} style={styles.aiInsight} />
-              {/* 말풍선 꼬리 */}
-              <View style={styles.aiBubbleTail} />
-            </View>
-
-            {/* 곰 + 스파클 */}
-            <View style={styles.aiBearArea}>
-              <Ionicons name="sparkles" size={10} color="#F6B84B" style={styles.aiBearSparkle1} />
-              <Ionicons name="sparkles" size={7} color={Colors.primary} style={styles.aiBearSparkle2} />
-              <Image source={require('../../assets/coach.png')} style={styles.aiCoachImage} />
-              <Ionicons name="sparkles" size={7} color="#F6B84B" style={styles.aiBearSparkle3} />
             </View>
           </View>
         </View>
 
-        <View style={styles.summaryCard}>
+        <View style={styles.summarySection}>
           <View style={styles.summaryHeader}>
             <Text style={styles.summaryTitle}>오늘 요약</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/logs')} style={styles.summaryMoreBtn}>
@@ -546,77 +511,71 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.summaryStats}>
+          <View style={styles.summaryGrid}>
             {/* 마지막 수유 */}
-            <View style={styles.summaryStat}>
+            <View style={styles.summaryTile}>
               <View style={[styles.summaryIcon, { backgroundColor: '#EBF3FB' }]}>
                 <Ionicons name="water" size={18} color="#5B9BD5" />
               </View>
-              <Text style={styles.summaryStatLabel}>마지막 수유</Text>
-              <Text style={styles.summaryStatValue}>
-                {lastFeedingLog ? formatTimeAgo(lastFeedingLog.fed_at) : '-'}
-              </Text>
-              <Text style={styles.summaryStatSub}>
-                {lastFeedingLog ? `(${formatKoTime(new Date(lastFeedingLog.fed_at))})` : '기록 없음'}
-              </Text>
+              <View style={styles.summaryTileText}>
+                <Text style={styles.summaryStatLabel}>마지막 수유</Text>
+                <Text style={styles.summaryStatValue}>
+                  {lastFeedingLog ? formatTimeAgo(lastFeedingLog.fed_at) : '-'}
+                </Text>
+                <Text style={styles.summaryStatSub}>
+                  {lastFeedingLog ? `(${formatKoTime(new Date(lastFeedingLog.fed_at))})` : '기록 없음'}
+                </Text>
+              </View>
             </View>
 
             {/* 오늘 총 수면 */}
-            <View style={styles.summaryStat}>
+            <View style={styles.summaryTile}>
               <View style={[styles.summaryIcon, { backgroundColor: '#EDE7F6' }]}>
                 <Ionicons name="moon" size={18} color="#7E57C2" />
               </View>
-              <Text style={styles.summaryStatLabel}>오늘 총 수면</Text>
-              <Text style={styles.summaryStatValue}>
-                {todaySleepMinutes > 0 ? formatDuration(todaySleepMinutes) : '-'}
-              </Text>
-              <Text style={styles.summaryStatSub}>평균 {expectedSleepByAge}시간</Text>
+              <View style={styles.summaryTileText}>
+                <Text style={styles.summaryStatLabel}>오늘 총 수면</Text>
+                <Text style={styles.summaryStatValue}>
+                  {todaySleepMinutes > 0 ? formatDuration(todaySleepMinutes) : '-'}
+                </Text>
+                <Text style={styles.summaryStatSub}>평균 {expectedSleepByAge}시간</Text>
+              </View>
             </View>
 
             {/* 기저귀 */}
-            <View style={styles.summaryStat}>
+            <View style={styles.summaryTile}>
               <View style={[styles.summaryIcon, { backgroundColor: '#FFF8E1' }]}>
                 <Ionicons name="refresh-circle" size={18} color="#FFA000" />
               </View>
-              <Text style={styles.summaryStatLabel}>기저귀</Text>
-              <Text style={styles.summaryStatValue}>{todayDiapers.length}회</Text>
-              <Text style={styles.summaryStatSub}>
-                {todayDiapers.length === 0 ? '기록 없음' : '정상'}
-              </Text>
+              <View style={styles.summaryTileText}>
+                <Text style={styles.summaryStatLabel}>기저귀</Text>
+                <Text style={styles.summaryStatValue}>{todayDiapers.length}회</Text>
+                <Text style={styles.summaryStatSub}>
+                  {todayDiapers.length === 0 ? '기록 없음' : '정상'}
+                </Text>
+              </View>
             </View>
 
             {/* 체온 */}
-            <View style={styles.summaryStat}>
+            <View style={styles.summaryTile}>
               <View style={[styles.summaryIcon, { backgroundColor: '#FFF8E1' }]}>
                 <Ionicons name="thermometer" size={18} color={Colors.warning} />
               </View>
-              <Text style={styles.summaryStatLabel}>체온</Text>
-              <Text style={styles.summaryStatValue}>
-                {latestTempLog?.value ? `${latestTempLog.value}°C` : '-'}
-              </Text>
-              <Text style={styles.summaryStatSub}>
-                {latestTempLog ? '정상' : '기록 없음'}
-              </Text>
+              <View style={styles.summaryTileText}>
+                <Text style={styles.summaryStatLabel}>체온</Text>
+                <Text style={styles.summaryStatValue}>
+                  {latestTempLog?.value ? `${latestTempLog.value}°C` : '-'}
+                </Text>
+                <Text style={styles.summaryStatSub}>
+                  {latestTempLog ? '정상' : '기록 없음'}
+                </Text>
+              </View>
             </View>
           </View>
 
-          {/* 다음 낮잠 예상 */}
-          <TouchableOpacity
-            style={styles.summaryNapRow}
-            onPress={() => router.push({ pathname: '/(tabs)/chat', params: { question: `${activeChild.name}의 다음 낮잠 시간을 알려줘` } })}
-          >
-            <View style={styles.summaryNapIcon}>
-              <Ionicons name="heart-outline" size={14} color={Colors.primary} />
-            </View>
-            <Text style={styles.summaryNapLabel}>다음 낮잠 예상</Text>
-            <Text style={styles.summaryNapTime}>
-              {formatKoTime(nextNapTime)} ~ {formatKoTime(napEndTime)}
-            </Text>
-            <Ionicons name="chevron-forward" size={14} color={Colors.textSecondary} />
-          </TouchableOpacity>
         </View>
 
-        <View style={styles.timelineCard}>
+        <View style={styles.timelineSection}>
           <View style={styles.timelineHeader}>
             <Text style={styles.timelineTitle}>오늘 타임라인</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/logs')}>
@@ -637,7 +596,7 @@ export default function HomeScreen() {
                   <View style={[styles.railLine, index === timelineItems.length - 1 && styles.railLineHidden]} />
                 </View>
 
-                <View style={styles.timelineContent}>
+                <View style={styles.timelineEntry}>
                   <View style={[styles.timelineIconBox, { backgroundColor: item.bgColor }]}>
                     <Ionicons name={item.icon as React.ComponentProps<typeof Ionicons>['name']} size={18} color={item.color} />
                   </View>
@@ -670,14 +629,10 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     paddingBottom: Spacing.lg,
   },
-  profileCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.md + 2,
+  profileHero: {
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
     marginBottom: Spacing.md + 2,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.sm,
   },
   profileHeader: {
     flexDirection: 'row',
@@ -707,20 +662,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
   },
-  badge: {
+  profileActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.primaryLight,
+    gap: Spacing.sm,
     flexShrink: 0,
   },
-  badgeText: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontWeight: '700',
+  profileActionButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadows.sm,
   },
   profileImage: {
     width: 38,
@@ -734,27 +691,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  quickActionRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm + 2,
-  },
-  quickAction: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background,
-    borderRadius: Radius.md,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  quickActionText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    marginTop: 5,
   },
   childScroll: {
     marginBottom: Spacing.md + 4,
@@ -822,67 +758,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   aiContentBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginTop: Spacing.sm,
   },
-  aiBubble: {
-    flex: 1,
+  aiTextBox: {
     backgroundColor: '#FFF5F0',
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md + 4,
     justifyContent: 'center',
-    position: 'relative',
-  },
-  aiBubbleTail: {
-    position: 'absolute',
-    right: -10,
-    top: '50%',
-    marginTop: -8,
-    width: 0,
-    height: 0,
-    borderTopWidth: 8,
-    borderBottomWidth: 8,
-    borderLeftWidth: 10,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: '#FFF5F0',
   },
   aiInsight: {
     color: Colors.text,
     fontSize: 13,
     lineHeight: 22,
-  },
-  aiBearArea: {
-    width: 76,
-    height: 76,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    marginLeft: 14,
-    marginRight: -4,
-    flexShrink: 0,
-  },
-  aiCoachImage: {
-    width: 70,
-    height: 70,
-    resizeMode: 'contain',
-  },
-  aiBearSparkle1: {
-    position: 'absolute',
-    top: 4,
-    right: 6,
-  },
-  aiBearSparkle2: {
-    position: 'absolute',
-    top: 20,
-    right: 2,
-  },
-  aiBearSparkle3: {
-    position: 'absolute',
-    bottom: 6,
-    right: 4,
   },
   aiButton: {
     marginTop: Spacing.sm,
@@ -900,14 +788,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
   },
-  summaryCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.md + 2,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  summarySection: {
     marginBottom: Spacing.md + 4,
-    ...Shadows.sm,
   },
   summaryHeader: {
     flexDirection: 'row',
@@ -930,14 +812,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.primary,
   },
-  summaryStats: {
+  summaryGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
-  summaryStat: {
-    flex: 1,
+  summaryTile: {
+    width: '48%',
+    minHeight: 86,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadows.sm,
   },
   summaryIcon: {
     width: 40,
@@ -945,52 +837,28 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    marginRight: Spacing.sm,
+    flexShrink: 0,
+  },
+  summaryTileText: {
+    flex: 1,
+    minWidth: 0,
   },
   summaryStatLabel: {
-    fontSize: 10,
+    fontSize: 11,
     color: Colors.textSecondary,
-    fontWeight: '500',
-    textAlign: 'center',
+    fontWeight: '600',
   },
   summaryStatValue: {
-    fontSize: 13,
+    marginTop: 3,
+    fontSize: 15,
     fontWeight: '800',
     color: Colors.text,
-    textAlign: 'center',
   },
   summaryStatSub: {
+    marginTop: 2,
     fontSize: 10,
     color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  summaryNapRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primaryLight,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 2,
-    gap: Spacing.sm,
-  },
-  summaryNapIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  summaryNapLabel: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  summaryNapTime: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.primary,
   },
   metricRow: {
     flexDirection: 'row',
@@ -1027,13 +895,8 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 12,
   },
-  timelineCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.lg,
-    padding: Spacing.md + 2,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.sm,
+  timelineSection: {
+    marginTop: Spacing.sm,
   },
   timelineHeader: {
     flexDirection: 'row',
@@ -1058,7 +921,8 @@ const styles = StyleSheet.create({
   timelineItem: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    minHeight: 64,
+    minHeight: 74,
+    marginBottom: Spacing.sm,
   },
   timelineTime: {
     width: 44,
@@ -1084,12 +948,18 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
-  timelineContent: {
+  timelineEntry: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingLeft: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 12,
+    paddingLeft: 12,
+    paddingRight: 4,
+    ...Shadows.sm,
   },
   timelineIconBox: {
     width: 40,

@@ -14,11 +14,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
+import { getOAuthRedirectUri } from '../../lib/auth/oauthRedirect';
+import { createSessionFromUrl } from '../../lib/auth/sessionFromUrl';
 import { supabase } from '../../lib/supabase';
 import { AUTO_LOGIN_KEY, SAVED_EMAIL_KEY, isAutoLoginEnabled } from '../../lib/authPreferences';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Colors, Spacing } from '../../constants/theme';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -26,6 +31,7 @@ export default function LoginScreen() {
   const [rememberEmail, setRememberEmail] = useState(false);
   const [autoLogin, setAutoLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [kakaoLoading, setKakaoLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -62,6 +68,36 @@ export default function LoginScreen() {
     }
 
     await AsyncStorage.setItem(AUTO_LOGIN_KEY, autoLogin ? 'true' : 'false');
+  };
+
+  const signInWithKakao = async () => {
+    setKakaoLoading(true);
+    try {
+      const redirectTo = getOAuthRedirectUri();
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'kakao',
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+
+      if (error) throw error;
+      if (!data.url) return;
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+      if (result.type === 'success') {
+        await createSessionFromUrl(result.url);
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        Alert.alert('카카오 로그인 실패', '로그인을 완료하지 못했습니다. 다시 시도해주세요.');
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : '다시 시도해주세요.';
+      Alert.alert('카카오 로그인 실패', message);
+    } finally {
+      setKakaoLoading(false);
+    }
   };
 
   return (
@@ -143,6 +179,24 @@ export default function LoginScreen() {
               onPress={() => router.push('/(auth)/signup')}
               variant="outline"
             />
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>소셜 로그인</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.kakaoButton}
+              onPress={signInWithKakao}
+              disabled={kakaoLoading}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.kakaoIcon}>💬</Text>
+              <Text style={styles.kakaoText}>
+                {kakaoLoading ? '연결 중...' : '카카오로 시작하기'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -232,5 +286,22 @@ const styles = StyleSheet.create({
   dividerText: {
     color: Colors.textLight,
     fontSize: 14,
+  },
+  kakaoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEE500',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: Spacing.sm,
+  },
+  kakaoIcon: {
+    fontSize: 20,
+  },
+  kakaoText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#191919',
   },
 });

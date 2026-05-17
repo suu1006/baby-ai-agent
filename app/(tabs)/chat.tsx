@@ -17,7 +17,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
 import { useChildStore } from '../../store/childStore';
 import { supabase } from '../../lib/supabase';
 import { runAgent, AgentMessage } from '../../lib/agent';
@@ -279,17 +278,19 @@ export default function ChatScreen() {
   const resetCurrentChat = useCallback(() => {
     setMessages([]);
     setInputText('');
+    setDisplayedStatusText('');
     stopTypewriter();
     clearPendingStatusQueue();
     stopStatusTypewriter();
     streamedTextRef.current = '';
-  }, [activeChild?.id]);
+    lastInjectedQuestionRef.current = null;
+  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      resetCurrentChat();
-    }, [resetCurrentChat])
-  );
+  const startNewChat = useCallback(() => {
+    if (sending) return;
+    resetCurrentChat();
+    setHistoryVisible(false);
+  }, [resetCurrentChat, sending]);
 
   useEffect(() => {
     if (!question || sending) return;
@@ -544,15 +545,32 @@ export default function ChatScreen() {
       >
         {/* 헤더 */}
         <View style={styles.header}>
-          <View>
+          <View style={styles.headerTextBlock}>
             <Text style={styles.headerTitle}>AI 육아 상담</Text>
             <Text style={styles.headerSubtitle}>
               {activeChild?.name}에 대해 무엇이든 물어보세요
             </Text>
           </View>
-          <TouchableOpacity style={styles.headerIconButton} onPress={openHistory}>
-            <Ionicons name="time-outline" size={22} color={Colors.textSecondary} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={openHistory}
+              accessibilityLabel="대화 히스토리 열기"
+            >
+              <Ionicons name="time-outline" size={22} color={Colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.headerIconButton,
+                sending && styles.headerIconButtonDisabled,
+              ]}
+              onPress={startNewChat}
+              accessibilityLabel="새 대화 시작"
+              disabled={sending}
+            >
+              <Ionicons name="add" size={24} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* 메시지 목록 */}
@@ -751,6 +769,15 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
   },
+  headerTextBlock: {
+    flex: 1,
+    paddingRight: Spacing.md,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
   headerIconButton: {
     width: 42,
     height: 42,
@@ -760,6 +787,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  headerIconButtonDisabled: {
+    opacity: 0.45,
   },
   messageList: {
     padding: Spacing.md,

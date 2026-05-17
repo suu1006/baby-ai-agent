@@ -5,8 +5,10 @@ import { Stack, router, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
 import { useAuthStore } from '../store/authStore';
 import { useChildStore } from '../store/childStore';
+import { createSessionFromUrl } from '../lib/auth/sessionFromUrl';
 import { supabase, supabaseConfigError } from '../lib/supabase';
 import { AUTO_LOGIN_KEY, isAutoLoginEnabled } from '../lib/authPreferences';
 import { Colors, Spacing } from '../constants/theme';
@@ -21,6 +23,17 @@ function useProtectedRoute() {
       setSession(null);
       return;
     }
+
+    const handleUrl = async (url: string) => {
+      try {
+        await createSessionFromUrl(url);
+      } catch (error) {
+        console.warn('[auth] deep link session error:', error);
+      }
+    };
+
+    Linking.getInitialURL().then((url) => { if (url) handleUrl(url); });
+    const linkingSub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       const autoLogin = isAutoLoginEnabled(await AsyncStorage.getItem(AUTO_LOGIN_KEY));
@@ -38,7 +51,10 @@ function useProtectedRoute() {
       setSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      linkingSub.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -56,26 +72,20 @@ function useProtectedRoute() {
       } else if (!isWeb && inLanding) {
         router.replace('/(auth)/login');
       }
-    } else {
-      if (inAuthGroup || inLanding) {
-        fetchChildren(session.user.id).then(() => {
-          const hasChildren = useChildStore.getState().children.length > 0;
-          if (hasChildren) {
-            router.replace('/(tabs)');
-          } else {
-            router.replace('/onboarding');
-          }
-        });
-      } else if (!inOnboarding && children.length === 0) {
-        fetchChildren(session.user.id).then(() => {
-          const hasChildren = useChildStore.getState().children.length > 0;
-          if (!hasChildren) {
-            router.replace('/onboarding');
-          }
-        });
-      }
+    } else if (inAuthGroup || inLanding) {
+      fetchChildren(session.user.id).then(() => {
+        const hasChildren = useChildStore.getState().children.length > 0;
+        router.replace(hasChildren ? '/(tabs)' : '/onboarding');
+      });
+    } else if (!inOnboarding && children.length === 0) {
+      fetchChildren(session.user.id).then(() => {
+        const hasChildren = useChildStore.getState().children.length > 0;
+        if (!hasChildren) {
+          router.replace('/onboarding');
+        }
+      });
     }
-  }, [session, loading]);
+  }, [session, loading, segments]);
 }
 
 export default function RootLayout() {
