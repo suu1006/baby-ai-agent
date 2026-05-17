@@ -14,7 +14,7 @@ import {
   Animated,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { useChildStore } from '../../store/childStore';
@@ -119,6 +119,7 @@ function formatAssistantMessage(raw: string): string {
 }
 
 export default function ChatScreen() {
+  const insets = useSafeAreaInsets();
   const { activeChild } = useChildStore();
   const { question } = useLocalSearchParams<{ question?: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -149,14 +150,15 @@ export default function ChatScreen() {
   const loadChatHistory = async () => {
     if (!activeChild) return;
     setHistoryLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('chat_messages')
       .select('*')
       .eq('child_id', activeChild.id)
-      .order('created_at', { ascending: true })
-      .limit(100);
+      .order('created_at', { ascending: false })
+      .limit(1000);
 
-    if (data) setHistoryMessages(data);
+    if (error) console.error('[Chat History Load Error]', error.message);
+    if (data) setHistoryMessages(data.reverse());
     setHistoryLoading(false);
   };
 
@@ -177,11 +179,12 @@ export default function ChatScreen() {
 
   const saveMessage = async (role: 'user' | 'assistant', content: string) => {
     if (!activeChild) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('chat_messages')
       .insert({ child_id: activeChild.id, role, content })
       .select()
       .single();
+    if (error) console.error('[saveMessage Error]', error.message, error.code);
     return data;
   };
 
@@ -611,7 +614,7 @@ export default function ChatScreen() {
         />
 
         {/* 입력창 */}
-        <View style={styles.inputArea}>
+        <View style={[styles.inputArea, { paddingBottom: insets.bottom || Spacing.md }]}>
           <TextInput
             style={styles.textInput}
             value={inputText}
@@ -909,7 +912,9 @@ const styles = StyleSheet.create({
   inputArea: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
     backgroundColor: Colors.surface,
     borderTopWidth: 1,
     borderTopColor: Colors.border,

@@ -35,9 +35,9 @@ type DateTimePickerMode = 'date' | 'time';
 type FeedingType = 'breast' | 'formula' | 'mixed' | 'solid';
 type LogTableName = 'feeding_logs' | 'sleep_logs' | 'diaper_logs' | 'health_logs';
 
-type FeedingLog = { id: string; fed_at: string; amount_ml: number | null; type: string };
-type SleepLog = { id: string; started_at: string; ended_at: string | null; duration_minutes: number | null };
-type DiaperLog = { id: string; changed_at: string; type: string };
+type FeedingLog = { id: string; fed_at: string; amount_ml: number | null; type: string; memo: string | null };
+type SleepLog = { id: string; started_at: string; ended_at: string | null; duration_minutes: number | null; memo: string | null };
+type DiaperLog = { id: string; changed_at: string; type: string; memo: string | null };
 type HealthLog = {
   id: string;
   recorded_at: string;
@@ -370,15 +370,18 @@ export default function LogsScreen() {
   const [feedAmount, setFeedAmount] = useState('');
   const [feedType, setFeedType] = useState<FeedingType>('breast');
   const [feedDateTime, setFeedDateTime] = useState<Date | null>(null);
+  const [feedMemo, setFeedMemo] = useState('');
   const [editingFeedingLog, setEditingFeedingLog] = useState<FeedingLog | null>(null);
   // 수면 폼
   const [sleepStart, setSleepStart] = useState<Date | null>(null);
   const [sleepEnd, setSleepEnd] = useState<Date | null>(null);
   const [sleepOngoing, setSleepOngoing] = useState(false);
+  const [sleepMemo, setSleepMemo] = useState('');
   const [editingSleepLog, setEditingSleepLog] = useState<SleepLog | null>(null);
   // 기저귀 폼
   const [diaperType, setDiaperType] = useState<'wet' | 'dirty' | 'both' | 'dry'>('wet');
   const [diaperDateTime, setDiaperDateTime] = useState<Date | null>(null);
+  const [diaperMemo, setDiaperMemo] = useState('');
   const [editingDiaperLog, setEditingDiaperLog] = useState<DiaperLog | null>(null);
   // 건강 폼
   const [healthTitle, setHealthTitle] = useState('');
@@ -452,7 +455,7 @@ export default function LogsScreen() {
     const [feeding, sleep, diaper, health] = await Promise.all([
       supabase
         .from('feeding_logs')
-        .select('id, fed_at, amount_ml, type')
+        .select('id, fed_at, amount_ml, type, memo')
         .eq('child_id', activeChild.id)
         .gte('fed_at', dayStartISO)
         .lt('fed_at', dayEndISO)
@@ -460,7 +463,7 @@ export default function LogsScreen() {
         .limit(100),
       supabase
         .from('sleep_logs')
-        .select('id, started_at, ended_at, duration_minutes')
+        .select('id, started_at, ended_at, duration_minutes, memo')
         .eq('child_id', activeChild.id)
         .gte('started_at', dayStartISO)
         .lt('started_at', dayEndISO)
@@ -468,7 +471,7 @@ export default function LogsScreen() {
         .limit(100),
       supabase
         .from('diaper_logs')
-        .select('id, changed_at, type')
+        .select('id, changed_at, type, memo')
         .eq('child_id', activeChild.id)
         .gte('changed_at', dayStartISO)
         .lt('changed_at', dayEndISO)
@@ -504,6 +507,7 @@ export default function LogsScreen() {
     setFeedAmount('');
     setFeedType('breast');
     setFeedDateTime(null);
+    setFeedMemo('');
     setEditingFeedingLog(null);
   };
 
@@ -512,6 +516,7 @@ export default function LogsScreen() {
     setSleepStart(null);
     setSleepEnd(null);
     setSleepOngoing(false);
+    setSleepMemo('');
   };
 
   const openAddModal = (tab: LogTab) => {
@@ -556,6 +561,7 @@ export default function LogsScreen() {
     setFeedAmount(log.amount_ml ? String(log.amount_ml) : '');
     setFeedType((['breast', 'formula', 'mixed', 'solid'].includes(log.type) ? log.type : 'breast') as FeedingType);
     setFeedDateTime(new Date(log.fed_at));
+    setFeedMemo(log.memo ?? '');
     setModalType('feeding');
   };
 
@@ -565,6 +571,7 @@ export default function LogsScreen() {
     setSleepStart(new Date(log.started_at));
     setSleepOngoing(!log.ended_at);
     setSleepEnd(log.ended_at ? new Date(log.ended_at) : null);
+    setSleepMemo(log.memo ?? '');
     setModalType('sleep');
   };
 
@@ -572,6 +579,7 @@ export default function LogsScreen() {
     setEditingDiaperLog(null);
     setDiaperDateTime(null);
     setDiaperType('wet');
+    setDiaperMemo('');
   };
 
   const openDiaperEditor = (log: DiaperLog) => {
@@ -582,6 +590,7 @@ export default function LogsScreen() {
     setDiaperType(
       t === 'wet' || t === 'dirty' || t === 'both' || t === 'dry' ? t : 'wet',
     );
+    setDiaperMemo(log.memo ?? '');
     setModalType('diaper');
   };
 
@@ -603,6 +612,7 @@ export default function LogsScreen() {
       fed_at: (feedDateTime ?? new Date()).toISOString(),
       amount_ml: feedAmount ? parseInt(feedAmount, 10) : null,
       type: feedType,
+      memo: feedMemo.trim() || null,
     };
 
     const { error } = editingFeedingLog
@@ -640,12 +650,14 @@ export default function LogsScreen() {
         .update({
           started_at: startedAt,
           ended_at: endedAt,
+          memo: sleepMemo.trim() || null,
         })
         .eq('id', editingSleepLog.id)
       : await supabase.from('sleep_logs').insert({
         child_id: activeChild.id,
         started_at: startedAt,
         ended_at: endedAt,
+        memo: sleepMemo.trim() || null,
       });
 
     if (error) {
@@ -661,7 +673,7 @@ export default function LogsScreen() {
   const handleSaveDiaper = async () => {
     if (!activeChild) return;
     const changedAt = (diaperDateTime ?? new Date()).toISOString();
-    const payload = { changed_at: changedAt, type: diaperType };
+    const payload = { changed_at: changedAt, type: diaperType, memo: diaperMemo.trim() || null };
 
     const { error } = editingDiaperLog
       ? await supabase.from('diaper_logs').update(payload).eq('id', editingDiaperLog.id)
@@ -1288,6 +1300,15 @@ export default function LogsScreen() {
           blurOnSubmit
           onSubmitEditing={Keyboard.dismiss}
         />
+        <Text style={styles.modalLabel}>메모 (선택)</Text>
+        <TextInput
+          style={[styles.input, styles.memoInput]}
+          value={feedMemo}
+          onChangeText={setFeedMemo}
+          multiline
+          placeholder="수유 관련 메모를 입력하세요"
+          placeholderTextColor={Colors.textLight}
+        />
         <View style={styles.modalActions}>
           <TouchableOpacity style={styles.cancelBtn} onPress={closeLogModal}>
             <Text style={styles.cancelBtnText}>취소</Text>
@@ -1329,6 +1350,15 @@ export default function LogsScreen() {
           <Text style={styles.checkboxLabel}>진행 중</Text>
         </TouchableOpacity>
         {!sleepOngoing && renderDateTimeField('종료 날짜/시간', sleepEnd, 'sleepEnd', '종료 시간을 선택해주세요')}
+        <Text style={styles.modalLabel}>메모 (선택)</Text>
+        <TextInput
+          style={[styles.input, styles.memoInput]}
+          value={sleepMemo}
+          onChangeText={setSleepMemo}
+          multiline
+          placeholder="수면 관련 메모를 입력하세요"
+          placeholderTextColor={Colors.textLight}
+        />
         <View style={styles.modalActions}>
           <TouchableOpacity
             style={styles.cancelBtn}
@@ -1381,6 +1411,15 @@ export default function LogsScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        <Text style={styles.modalLabel}>메모 (선택)</Text>
+        <TextInput
+          style={[styles.input, styles.memoInput]}
+          value={diaperMemo}
+          onChangeText={setDiaperMemo}
+          multiline
+          placeholder="기저귀 관련 메모를 입력하세요"
+          placeholderTextColor={Colors.textLight}
+        />
         <View style={styles.modalActions}>
           <TouchableOpacity
             style={styles.cancelBtn}
