@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Baby, GenderMale, GenderFemale } from 'phosphor-react-native';
 import { useAuthStore } from '../store/authStore';
 import { useChildStore } from '../store/childStore';
-import { supabase } from '../lib/supabase';
+import { uploadChildProfilePhoto } from '../lib/profilePhoto';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Colors, Radius, Spacing, Shadows } from '../constants/theme';
@@ -30,7 +30,7 @@ export default function OnboardingScreen() {
   const [name, setName] = useState('');
   const [birthdate, setBirthdate] = useState(new Date());
   const [gender, setGender] = useState<'male' | 'female' | null>(null);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoAsset, setPhotoAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pendingDate, setPendingDate] = useState(new Date());
   const [loading, setLoading] = useState(false);
@@ -42,31 +42,10 @@ export default function OnboardingScreen() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
+      base64: true,
     });
     if (!result.canceled) {
-      setPhotoUri(result.assets[0].uri);
-    }
-  };
-
-  const uploadPhoto = async (uri: string): Promise<string | null> => {
-    try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const fileName = `${user?.id}/${Date.now()}.jpg`;
-
-      const { error } = await supabase.storage
-        .from('diary-photos')
-        .upload(fileName, blob, { contentType: 'image/jpeg' });
-
-      if (error) return null;
-
-      const { data } = supabase.storage
-        .from('diary-photos')
-        .getPublicUrl(fileName);
-
-      return data.publicUrl;
-    } catch {
-      return null;
+      setPhotoAsset(result.assets[0]);
     }
   };
 
@@ -84,8 +63,17 @@ export default function OnboardingScreen() {
     setLoading(true);
 
     let photoUrl: string | null = null;
-    if (photoUri) {
-      photoUrl = await uploadPhoto(photoUri);
+    if (photoAsset) {
+      try {
+        photoUrl = await uploadChildProfilePhoto({
+          userId: user.id,
+          asset: photoAsset,
+        });
+      } catch {
+        setLoading(false);
+        Alert.alert('사진 업로드 오류', '사진 저장에 실패했습니다. 다시 선택해주세요.');
+        return;
+      }
     }
 
     const child = await addChild({
@@ -121,8 +109,8 @@ export default function OnboardingScreen() {
           </Text>
 
           <TouchableOpacity style={styles.photoPicker} onPress={pickImage}>
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photoImage} />
+            {photoAsset ? (
+              <Image source={{ uri: photoAsset.uri }} style={styles.photoImage} />
             ) : (
               <View style={styles.photoPlaceholder}>
                 <Ionicons name="camera" size={32} color={Colors.textLight} />

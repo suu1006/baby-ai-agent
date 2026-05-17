@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   Switch,
+  Dimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,10 +19,31 @@ import { calculateAgeInMonths } from '../../lib/age';
 import { Card } from '../../components/ui/Card';
 import { Colors, Spacing, Radius, Shadows } from '../../constants/theme';
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_WIDTH = SCREEN_WIDTH - Spacing.lg * 2 - 20;
+
 export default function SettingsScreen() {
   const { user, signOut } = useAuthStore();
-  const { activeChild, children, setActiveChild } = useChildStore();
+  const { activeChild, children, setActiveChild, deleteChild } = useChildStore();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  const handleDeleteChild = (child: { id: string; name: string }) => {
+    Alert.alert(
+      '아이 삭제',
+      `${child.name}의 모든 기록이 삭제됩니다. 계속하시겠어요?`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await deleteChild(child.id);
+            if (!ok) Alert.alert('오류', '삭제에 실패했어요. 다시 시도해주세요.');
+          },
+        },
+      ]
+    );
+  };
 
   const handleSignOut = () => {
     Alert.alert('로그아웃', '로그아웃 하시겠어요?', [
@@ -51,74 +73,73 @@ export default function SettingsScreen() {
       >
         <Text style={styles.title}>설정</Text>
 
-        {/* 아이 프로필 */}
-        {activeChild && (
-          <Card style={styles.profileCard}>
-            <View style={styles.profileRow}>
-              {activeChild.photo_url ? (
-                <Image
-                  source={{ uri: activeChild.photo_url }}
-                  style={styles.profilePhoto}
-                />
-              ) : (
-                <View style={styles.profilePhotoPlaceholder}>
-                  <Ionicons
-                    name={activeChild.gender === 'male' ? 'man' : 'woman'}
-                    size={34}
-                    color={Colors.primary}
-                  />
-                </View>
-              )}
-              <View style={styles.profileInfo}>
-                <View style={styles.profileNameRow}>
-                  <Text style={styles.profileName}>{activeChild.name}</Text>
-                  <Text style={styles.profileAge}>{ageText}</Text>
-                </View>
-                <Text style={styles.profileGender}>
-                  {activeChild.gender === 'male' ? '남자아이' : '여자아이'}
-                </Text>
-              </View>
-            </View>
-          </Card>
-        )}
-
-        {/* 아이 전환 (여러 아이 있을 때) */}
-        {children.length > 1 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>아이 선택</Text>
-            {children.map((child) => (
+        {/* 아이 프로필 캐러셀 */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          snapToInterval={CARD_WIDTH + Spacing.md}
+          snapToAlignment="start"
+          contentContainerStyle={styles.carouselContent}
+          style={styles.carousel}
+        >
+          {children.map((child) => {
+            const months = calculateAgeInMonths(child.birthdate);
+            const age = months < 12
+              ? `${months}개월`
+              : `${Math.floor(months / 12)}세 ${months % 12}개월`;
+            const isActive = activeChild?.id === child.id;
+            return (
               <TouchableOpacity
                 key={child.id}
-                style={[
-                  styles.childItem,
-                  activeChild?.id === child.id && styles.childItemActive,
-                ]}
+                activeOpacity={0.85}
                 onPress={() => setActiveChild(child)}
               >
-                <View style={styles.childItemIcon}>
-                  <Ionicons
-                    name={child.gender === 'male' ? 'man' : 'woman'}
-                    size={18}
-                    color={Colors.primary}
-                  />
-                </View>
-                <Text style={styles.childItemName}>{child.name}</Text>
-                {activeChild?.id === child.id && (
-                  <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />
-                )}
+                <Card style={isActive ? { ...styles.profileCard, ...styles.profileCardActive } : styles.profileCard}>
+                  <View style={styles.profileRow}>
+                    {child.photo_url ? (
+                      <Image source={{ uri: child.photo_url }} style={styles.profilePhoto} />
+                    ) : (
+                      <View style={styles.profilePhotoPlaceholder}>
+                        <Ionicons
+                          name={child.gender === 'male' ? 'man' : 'woman'}
+                          size={34}
+                          color={Colors.primary}
+                        />
+                      </View>
+                    )}
+                    <View style={styles.profileInfo}>
+                      <View style={styles.profileNameRow}>
+                        <Text style={styles.profileName}>{child.name}</Text>
+                        <Text style={styles.profileAge}>{age}</Text>
+                      </View>
+                      <Text style={styles.profileGender}>
+                        {child.gender === 'male' ? '남자아이' : '여자아이'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteChild(child)}
+                      style={styles.deleteButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={Colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                </Card>
               </TouchableOpacity>
-            ))}
-          </View>
-        )}
+            );
+          })}
 
-        {/* 아이 추가 */}
-        <TouchableOpacity
-          style={styles.addChildButton}
-          onPress={() => router.push('/onboarding')}
-        >
-          <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
-          <Text style={styles.addChildText}>아이 추가하기</Text>
-        </TouchableOpacity>
+          {/* 아이 추가 카드 */}
+          <TouchableOpacity
+            style={styles.addChildCard}
+            onPress={() => router.push('/onboarding')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
+            <Text style={styles.addChildText}>아이 추가하기</Text>
+          </TouchableOpacity>
+        </ScrollView>
 
         {/* 알림 설정 */}
         <View style={styles.section}>
@@ -181,7 +202,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   container: {
-    padding: Spacing.lg,
+    paddingTop: Spacing.lg,
     paddingBottom: Spacing.xxl,
   },
   title: {
@@ -189,9 +210,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.text,
     marginBottom: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+  },
+  carousel: {
+    marginBottom: Spacing.lg,
+  },
+  carouselContent: {
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
   },
   profileCard: {
-    marginBottom: Spacing.lg,
+    width: CARD_WIDTH,
+  },
+  profileCardActive: {
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
   },
   profileRow: {
     flexDirection: 'row',
@@ -235,48 +269,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
   },
-  section: {
-    marginBottom: Spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  childItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    gap: Spacing.sm,
-    ...Shadows.sm,
-  },
-  childItemActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primaryLight,
-  },
-  childItemIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.primaryLight,
+  deleteButton: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 'auto',
   },
-  childItemName: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  addChildButton: {
+  addChildCard: {
+    width: CARD_WIDTH,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -287,12 +288,24 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.border,
     borderStyle: 'dashed',
-    marginBottom: Spacing.lg,
+    ...Shadows.sm,
   },
   addChildText: {
     fontSize: 15,
     color: Colors.primary,
     fontWeight: '600',
+  },
+  section: {
+    marginBottom: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   settingRow: {
     flexDirection: 'row',
@@ -321,6 +334,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.error + '10',
     borderRadius: Radius.md,
     padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
     marginBottom: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.error + '30',

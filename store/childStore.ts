@@ -11,6 +11,7 @@ type ChildState = {
   setActiveChild: (child: Child) => void;
   addChild: (child: Database['public']['Tables']['children']['Insert']) => Promise<Child | null>;
   updateChild: (id: string, updates: Database['public']['Tables']['children']['Update']) => Promise<void>;
+  deleteChild: (id: string) => Promise<boolean>;
 };
 
 export const useChildStore = create<ChildState>((set, get) => ({
@@ -70,5 +71,20 @@ export const useChildStore = create<ChildState>((set, get) => ({
         activeChild: state.activeChild?.id === id ? data : state.activeChild,
       }));
     }
+  },
+
+  deleteChild: async (id) => {
+    const { error } = await supabase.from('children').delete().eq('id', id);
+
+    if (!error) {
+      set((state) => {
+        const remaining = state.children.filter((c) => c.id !== id);
+        const newActive =
+          state.activeChild?.id === id ? (remaining[0] ?? null) : state.activeChild;
+        return { children: remaining, activeChild: newActive };
+      });
+      return true;
+    }
+    return false;
   },
 }));

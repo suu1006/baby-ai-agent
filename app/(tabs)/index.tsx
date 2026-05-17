@@ -139,7 +139,7 @@ function healthColor(type: HealthLogType) {
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
-  const { activeChild, children, fetchChildren, setActiveChild } = useChildStore();
+  const { activeChild, children, fetchChildren } = useChildStore();
   const [feedingLogs, setFeedingLogs] = useState<FeedingLog[]>([]);
   const [sleepLogs, setSleepLogs] = useState<SleepLog[]>([]);
   const [diaperLogs, setDiaperLogs] = useState<DiaperLog[]>([]);
@@ -456,30 +456,6 @@ export default function HomeScreen() {
 
           </View>
 
-        {children.length > 1 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.childScroll}>
-            {children.map((child) => (
-              <TouchableOpacity
-                key={child.id}
-                style={[
-                  styles.childTab,
-                  activeChild.id === child.id && styles.childTabActive,
-                ]}
-                onPress={() => setActiveChild(child)}
-              >
-                <Text
-                  style={[
-                    styles.childTabText,
-                    activeChild.id === child.id && styles.childTabTextActive,
-                  ]}
-                >
-                  {child.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-
         <View style={styles.aiCard}>
           <View style={styles.aiCardHeader}>
             <View style={styles.aiCardTitleRow}>
@@ -631,8 +607,8 @@ const styles = StyleSheet.create({
   },
   profileHero: {
     paddingTop: Spacing.sm,
-    paddingBottom: Spacing.md,
-    marginBottom: Spacing.md + 2,
+    paddingBottom: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
   profileHeader: {
     flexDirection: 'row',
@@ -691,30 +667,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  childScroll: {
-    marginBottom: Spacing.md + 4,
-  },
-  childTab: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surface,
-    marginRight: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  childTabActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  childTabText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  childTabTextActive: {
-    color: Colors.white,
   },
   aiCard: {
     backgroundColor: Colors.surface,

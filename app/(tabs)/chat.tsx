@@ -129,6 +129,8 @@ export default function ChatScreen() {
   const [historyVisible, setHistoryVisible] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  const [expandedHistoryAnswers, setExpandedHistoryAnswers] = useState<Set<string>>(new Set());
+  const [expandableHistoryAnswers, setExpandableHistoryAnswers] = useState<Set<string>>(new Set());
   const [assistantStatusText, setAssistantStatusText] = useState('답변을 준비하고 있어요...');
   const [displayedStatusText, setDisplayedStatusText] = useState('');
   const statusOpacityRef = useRef(new Animated.Value(1));
@@ -165,6 +167,8 @@ export default function ChatScreen() {
   const openHistory = async () => {
     setHistoryVisible(true);
     setExpandedDates(new Set());
+    setExpandedHistoryAnswers(new Set());
+    setExpandableHistoryAnswers(new Set());
     await loadChatHistory();
   };
 
@@ -173,6 +177,24 @@ export default function ChatScreen() {
       const next = new Set(prev);
       if (next.has(dateKey)) next.delete(dateKey);
       else next.add(dateKey);
+      return next;
+    });
+  };
+
+  const toggleHistoryAnswer = (answerId: string) => {
+    setExpandedHistoryAnswers((prev) => {
+      const next = new Set(prev);
+      if (next.has(answerId)) next.delete(answerId);
+      else next.add(answerId);
+      return next;
+    });
+  };
+
+  const markHistoryAnswerExpandable = (answerId: string) => {
+    setExpandableHistoryAnswers((prev) => {
+      if (prev.has(answerId)) return prev;
+      const next = new Set(prev);
+      next.add(answerId);
       return next;
     });
   };
@@ -328,6 +350,7 @@ export default function ChatScreen() {
   };
 
   const handleAssistantStatus = (status: string) => {
+    if (status.includes('도구')) return;
     showAssistantStatus(status);
     if (status === COMPOSING_STATUS) {
       startComposingStatusLoop();
@@ -556,13 +579,6 @@ export default function ChatScreen() {
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.headerIconButton}
-              onPress={openHistory}
-              accessibilityLabel="대화 히스토리 열기"
-            >
-              <Ionicons name="time-outline" size={22} color={Colors.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity
               style={[
                 styles.headerIconButton,
                 sending && styles.headerIconButtonDisabled,
@@ -572,6 +588,13 @@ export default function ChatScreen() {
               disabled={sending}
             >
               <Ionicons name="add" size={24} color={Colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={openHistory}
+              accessibilityLabel="대화 히스토리 열기"
+            >
+              <Ionicons name="time-outline" size={22} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -708,29 +731,65 @@ export default function ChatScreen() {
 
                     {isExpanded && (
                       <View style={styles.dateGroupBody}>
-                        {group.pairs.map(({ question, answer }) => (
-                          <View key={question.id} style={styles.convPair}>
-                            <View style={styles.convQuestion}>
-                              <Ionicons name="person-circle" size={16} color={Colors.primary} />
-                              <View style={styles.convQuestionContent}>
-                                <Text style={styles.convQuestionText}>{question.content}</Text>
-                                <Text style={styles.convTime}>
-                                  {new Date(question.created_at).toLocaleTimeString('ko-KR', {
-                                    hour: '2-digit', minute: '2-digit',
-                                  })}
-                                </Text>
+                        {group.pairs.map(({ question, answer }) => {
+                          const isAnswerExpanded = answer
+                            ? expandedHistoryAnswers.has(answer.id)
+                            : false;
+                          const isAnswerExpandable = answer
+                            ? expandableHistoryAnswers.has(answer.id)
+                            : false;
+                          const shouldCollapseAnswer = isAnswerExpandable && !isAnswerExpanded;
+
+                          return (
+                            <View key={question.id} style={styles.convPair}>
+                              <View style={styles.convQuestion}>
+                                <Ionicons name="person-circle" size={16} color={Colors.primary} />
+                                <View style={styles.convQuestionContent}>
+                                  <Text style={styles.convQuestionText}>{question.content}</Text>
+                                  <Text style={styles.convTime}>
+                                    {new Date(question.created_at).toLocaleTimeString('ko-KR', {
+                                      hour: '2-digit', minute: '2-digit',
+                                    })}
+                                  </Text>
+                                </View>
                               </View>
+                              {answer && (
+                                <View style={styles.convAnswer}>
+                                  <Ionicons name="sparkles" size={14} color={Colors.primary} style={styles.convAnswerIcon} />
+                                  <View style={styles.convAnswerBody}>
+                                    <Text
+                                      style={styles.convAnswerText}
+                                      numberOfLines={shouldCollapseAnswer ? 1 : undefined}
+                                      onTextLayout={({ nativeEvent }) => {
+                                        if (nativeEvent.lines.length > 1) {
+                                          markHistoryAnswerExpandable(answer.id);
+                                        }
+                                      }}
+                                    >
+                                      {answer.content}
+                                    </Text>
+                                    {isAnswerExpandable && (
+                                      <TouchableOpacity
+                                        style={styles.convAnswerToggle}
+                                        onPress={() => toggleHistoryAnswer(answer.id)}
+                                        activeOpacity={0.75}
+                                      >
+                                        <Text style={styles.convAnswerToggleText}>
+                                          {isAnswerExpanded ? '접기' : '전체 보기'}
+                                        </Text>
+                                        <Ionicons
+                                          name={isAnswerExpanded ? 'chevron-up' : 'chevron-down'}
+                                          size={13}
+                                          color={Colors.primary}
+                                        />
+                                      </TouchableOpacity>
+                                    )}
+                                  </View>
+                                </View>
+                              )}
                             </View>
-                            {answer && (
-                              <View style={styles.convAnswer}>
-                                <Ionicons name="sparkles" size={14} color={Colors.primary} style={styles.convAnswerIcon} />
-                                <Text style={styles.convAnswerText} numberOfLines={3}>
-                                  {answer.content}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-                        ))}
+                          );
+                        })}
                       </View>
                     )}
                   </View>
@@ -747,7 +806,7 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#F6F7F9',
   },
   flex: {
     flex: 1,
@@ -758,7 +817,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.lg,
     paddingBottom: Spacing.md,
-    backgroundColor: Colors.surface,
+    backgroundColor: '#EEF0F3',
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
@@ -787,7 +846,7 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
   },
@@ -798,6 +857,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     paddingBottom: Spacing.lg,
     flexGrow: 1,
+    backgroundColor: '#F6F7F9',
   },
   messagRow: {
     flexDirection: 'row',
@@ -906,7 +966,7 @@ const styles = StyleSheet.create({
   },
   quickQuestionText: {
     fontSize: 14,
-    color: Colors.primary,
+    color: Colors.text,
     fontWeight: '500',
   },
   inputArea: {
@@ -945,7 +1005,7 @@ const styles = StyleSheet.create({
   },
   historySafe: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
   },
   historyHeader: {
     flexDirection: 'row',
@@ -962,7 +1022,7 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
   },
@@ -1055,7 +1115,7 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     gap: Spacing.sm,
   },
   convPair: {
@@ -1095,10 +1155,24 @@ const styles = StyleSheet.create({
   convAnswerIcon: {
     marginTop: 2,
   },
-  convAnswerText: {
+  convAnswerBody: {
     flex: 1,
+  },
+  convAnswerText: {
     fontSize: 13,
     color: Colors.textSecondary,
     lineHeight: 19,
+  },
+  convAnswerToggle: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 6,
+  },
+  convAnswerToggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.primary,
   },
 });

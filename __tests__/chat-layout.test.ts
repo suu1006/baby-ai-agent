@@ -20,4 +20,27 @@ describe('ChatScreen layout and state behavior', () => {
   it('only resets the current chat from the new chat action', () => {
     expect(source).toContain('onPress={startNewChat}');
   });
+
+  it('uses gray consultation backgrounds with a darker header', () => {
+    expect(source).toContain("backgroundColor: '#F6F7F9'");
+    expect(source).toContain("backgroundColor: '#EEF0F3'");
+    expect(source).not.toContain("backgroundColor: '#FFF1F5'");
+    expect(source).toMatch(/messageList:\s*{[\s\S]*backgroundColor: '#F6F7F9'/);
+    expect(source).toMatch(/header:\s*{[\s\S]*backgroundColor: '#EEF0F3'/);
+  });
+
+  it('collapses long history answers behind a toggle', () => {
+    expect(source).toContain('expandedHistoryAnswers');
+    expect(source).toContain('expandableHistoryAnswers');
+    expect(source).toContain('nativeEvent.lines.length > 1');
+    expect(source).toContain('const shouldCollapseAnswer = isAnswerExpandable && !isAnswerExpanded;');
+    expect(source).toContain('numberOfLines={shouldCollapseAnswer ? 1 : undefined}');
+    expect(source).toContain('{isAnswerExpandable && (');
+    expect(source).toContain('전체 보기');
+    expect(source).toContain('접기');
+  });
+
+  it('uses dark gray text for default quick questions', () => {
+    expect(source).toMatch(/quickQuestionText:\s*{\s*fontSize: 14,\s*color: Colors\.text,/);
+  });
 });
