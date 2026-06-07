@@ -21,12 +21,15 @@ describe('ChatScreen layout and state behavior', () => {
     expect(source).toContain('onPress={startNewChat}');
   });
 
-  it('uses gray consultation backgrounds with a darker header', () => {
-    expect(source).toContain("backgroundColor: '#F6F7F9'");
-    expect(source).toContain("backgroundColor: '#EEF0F3'");
+  it('uses a soft consultation background with medical guidance', () => {
+    expect(source).toContain("backgroundColor: '#FFF7F8'");
+    expect(source).toContain("backgroundColor: '#FFFFFF'");
     expect(source).not.toContain("backgroundColor: '#FFF1F5'");
-    expect(source).toMatch(/messageList:\s*{[\s\S]*backgroundColor: '#F6F7F9'/);
-    expect(source).toMatch(/header:\s*{[\s\S]*backgroundColor: '#EEF0F3'/);
+    expect(source).toMatch(/messageList:\s*{[\s\S]*backgroundColor: '#FFF7F8'/);
+    expect(source).toMatch(/header:\s*{[\s\S]*backgroundColor: '#FFFFFF'/);
+    expect(source).toContain('assistantDisclaimer');
+    expect(source).toContain('medicalNotice');
+    expect(source).toContain('AI 답변은 의료 진단이나 치료를 대체하지 않아요.');
   });
 
   it('collapses long history answers behind a toggle', () => {
