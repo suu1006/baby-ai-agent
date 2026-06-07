@@ -1,4 +1,5 @@
 import { analyzePattern, searchBabyData } from './baby-data.ts';
+import { searchParentingKnowledge } from './rag.ts';
 import { searchWeb } from './web-search.ts';
 import type { AgentContext, AgentTool, ToolCall, ToolDefinition } from './types.ts';
 
@@ -68,6 +69,34 @@ export const SERVER_TOOLS: AgentTool[] = [
       String(args.data_json ?? '{}'),
       String(args.analysis_type ?? 'overall'),
     ),
+  },
+  {
+    execution: 'server',
+    definition: {
+      type: 'function',
+      function: {
+        name: 'search_parenting_knowledge',
+        description:
+          '수유, 수면, 발달, 예방접종, 안전, 건강 등 검증된 로컬 육아 지식 문서를 벡터 검색합니다. 일반 육아 지식 질문에 답하기 전에 우선 사용하세요.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: '검색할 육아 질문 또는 핵심 키워드 (한국어로 작성)',
+            },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    execute: async (args, context) => {
+      context.emitStatus?.('육아 지식 문서를 검색하고 있어요...');
+      return await searchParentingKnowledge({
+        query: String(args.query ?? ''),
+        context,
+      });
+    },
   },
   {
     execution: 'server',

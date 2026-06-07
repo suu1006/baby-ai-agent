@@ -22,10 +22,11 @@ Deno.test('SERVER_TOOLS exposes server-executed tool definitions', () => {
   assertEquals(SERVER_TOOLS.map((tool) => tool.definition.function.name), [
     'search_baby_data',
     'analyze_pattern',
+    'search_parenting_knowledge',
     'search_web',
   ]);
   assertEquals(SERVER_TOOLS.every((tool) => tool.execution === 'server'), true);
-  assertEquals(getToolDefinitions().length, 3);
+  assertEquals(getToolDefinitions().length, 4);
 });
 
 Deno.test('executeTool dispatches analyze_pattern without Supabase', async () => {

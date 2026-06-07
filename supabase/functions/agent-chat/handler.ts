@@ -1,4 +1,5 @@
 import { buildSystemPrompt } from './prompt.ts';
+import { searchParentingKnowledge } from './rag.ts';
 import { executeTool, getToolDefinitions } from './tools.ts';
 import {
   buildOpenRouterBody,
@@ -133,9 +134,19 @@ async function runToolLoop(input: {
   child: ChildContext;
   context: AgentContext;
   streamFinal: boolean;
+  retrievalContext?: string;
 }): Promise<{ messages: OpenRouterMessage[]; finalContent?: string }> {
   const messages: OpenRouterMessage[] = [
     { role: 'system', content: buildSystemPrompt(input.child) },
+    ...(input.retrievalContext
+      ? [{
+        role: 'system' as const,
+        content: `검색된 육아 지식 문서 컨텍스트:
+${input.retrievalContext}
+
+위 컨텍스트를 우선 근거로 사용하세요. 컨텍스트에 없는 내용은 일반 원칙으로 보완하되, 확실하지 않은 부분은 단정하지 마세요.`,
+      }]
+      : []),
     ...input.messages.map((message) => ({ role: message.role, content: message.content })),
   ];
 
@@ -177,6 +188,31 @@ async function runToolLoop(input: {
     messages,
     finalContent: result.type === 'text' ? result.content : undefined,
   };
+}
+
+function getLastUserQuestion(messages: ChatMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index].role === 'user') {
+      return messages[index].content;
+    }
+  }
+  return '';
+}
+
+async function retrieveKnowledgeContext(input: {
+  messages: ChatMessage[];
+  context: AgentContext;
+}): Promise<string | undefined> {
+  const query = getLastUserQuestion(input.messages);
+  if (!query.trim()) return undefined;
+
+  input.context.emitStatus?.('육아 지식 문서를 검색하고 있어요...');
+  try {
+    return await searchParentingKnowledge({ query, context: input.context });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `육아 지식 검색을 완료하지 못했습니다: ${message}`;
+  }
 }
 
 async function streamFinalAnswer(input: {
@@ -284,7 +320,8 @@ export function createAgentChatHandler(deps: HandlerDeps) {
         env: deps.env,
         fetch: deps.fetchImpl,
       };
-      const result = await runToolLoop({ messages, child, context, streamFinal: false });
+      const retrievalContext = await retrieveKnowledgeContext({ messages, context });
+      const result = await runToolLoop({ messages, child, context, streamFinal: false, retrievalContext });
       return jsonResponse({ content: result.finalContent ?? '답변을 생성하지 못했습니다. 잠시 후 다시 질문해주세요.' });
     }
 
@@ -300,7 +337,8 @@ export function createAgentChatHandler(deps: HandlerDeps) {
         };
 
         try {
-          const result = await runToolLoop({ messages, child, context, streamFinal: true });
+          const retrievalContext = await retrieveKnowledgeContext({ messages, context });
+          const result = await runToolLoop({ messages, child, context, streamFinal: true, retrievalContext });
           await streamFinalAnswer({ messages: result.messages, context, controller, encoder });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
