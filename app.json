@@ -18,7 +18,6 @@
       "bundleIdentifier": "com.babyai.agent",
       "infoPlist": {
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true,
           "NSAllowsLocalNetworking": true
         }
       }
@@ -29,10 +28,9 @@
         "backgroundColor": "#FFF5F0"
       },
       "edgeToEdgeEnabled": true,
-      "usesCleartextTraffic": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.babyai.agent",
-      "permissions": [
+      "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ]
     },

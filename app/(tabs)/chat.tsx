@@ -551,6 +551,11 @@ export default function ChatScreen() {
               {displayContent}
             </Text>
           </View>
+          {!isUser && !isPendingAssistant && (
+            <Text style={styles.assistantDisclaimer}>
+              AI 답변은 의료 진단이나 치료를 대체하지 않아요.
+            </Text>
+          )}
           <Text style={[styles.timeText, isUser && styles.userTimeText]}>
             {new Date(item.created_at).toLocaleTimeString('ko-KR', {
               hour: '2-digit',
@@ -602,6 +607,7 @@ export default function ChatScreen() {
         {/* 메시지 목록 */}
         <FlatList
           ref={flatListRef}
+          style={styles.messageScroller}
           data={messages}
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
@@ -620,6 +626,12 @@ export default function ChatScreen() {
               <Text style={styles.emptyChatSubtitle}>
                 발달, 수면, 이유식, 건강 등 모든 육아 질문에 답해드려요
               </Text>
+              <View style={styles.medicalNotice}>
+                <Ionicons name="information-circle-outline" size={17} color={Colors.primary} />
+                <Text style={styles.medicalNoticeText}>
+                  AI 답변은 의료 진단이나 치료를 대체하지 않아요. 고열, 호흡 곤란, 탈수, 경련 등 이상 증상은 의료진과 상담해주세요.
+                </Text>
+              </View>
 
               <View style={styles.quickQuestions}>
                 {QUICK_QUESTIONS.map((q) => (
@@ -646,7 +658,10 @@ export default function ChatScreen() {
             placeholderTextColor={Colors.textLight}
             multiline
             maxLength={500}
-            onSubmitEditing={() => handleSend()}
+            blurOnSubmit={false}
+            autoCorrect={false}
+            autoCapitalize="none"
+            onSubmitEditing={Platform.OS === 'ios' ? () => handleSend() : undefined}
           />
           <TouchableOpacity
             style={[
@@ -806,10 +821,11 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F6F7F9',
+    backgroundColor: '#FFF7F8',
   },
   flex: {
     flex: 1,
+    backgroundColor: '#FFF7F8',
   },
   header: {
     flexDirection: 'row',
@@ -817,7 +833,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.lg,
     paddingBottom: Spacing.md,
-    backgroundColor: '#EEF0F3',
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
@@ -853,11 +869,15 @@ const styles = StyleSheet.create({
   headerIconButtonDisabled: {
     opacity: 0.45,
   },
+  messageScroller: {
+    flex: 1,
+    backgroundColor: '#FFF7F8',
+  },
   messageList: {
     padding: Spacing.md,
     paddingBottom: Spacing.lg,
     flexGrow: 1,
-    backgroundColor: '#F6F7F9',
+    backgroundColor: '#FFF7F8',
   },
   messagRow: {
     flexDirection: 'row',
@@ -897,6 +917,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
     lineHeight: 22,
+  },
+  assistantDisclaimer: {
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    color: Colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
   },
   messageContentRow: {
     flexDirection: 'row',
@@ -951,7 +980,26 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: Spacing.md,
+  },
+  medicalNotice: {
+    width: '100%',
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     marginBottom: Spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  medicalNoticeText: {
+    flex: 1,
+    color: Colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   quickQuestions: {
     width: '100%',
